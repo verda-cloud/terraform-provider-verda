@@ -133,13 +133,13 @@ func (r *VolumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		Location: data.Location.ValueString(),
 	}
 
-	volumeID, err := r.client.Volumes.Create(ctx, createReq)
+	volumeID, err := r.client.Volumes.CreateVolume(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create volume, got error: %s", err))
 		return
 	}
 
-	volume, err := r.client.Volumes.GetByID(ctx, volumeID)
+	volume, err := r.client.Volumes.GetVolume(ctx, volumeID)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read created volume, got error: %s", err))
 		return

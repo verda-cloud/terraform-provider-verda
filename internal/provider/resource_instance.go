@@ -498,7 +498,7 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 	// Instances cannot be updated in the Verda API, only deleted and recreated
 	resp.Diagnostics.AddError(
 		"Update Not Supported",
-		"Instances cannot be updated. Most changes require replacing the resource.",
+		"Instances cannot be updated for now. Most changes require replacing the resource.",
 	)
 }
 
@@ -511,7 +511,7 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	err := r.client.Instances.Delete(ctx, []string{data.ID.ValueString()}, nil)
+	err := r.client.Instances.Delete(ctx, data.ID.ValueString(), nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete instance, got error: %s", err))
 		return
@@ -528,7 +528,7 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 	data.Image = types.StringValue(instance.Image)
 	data.Hostname = types.StringValue(instance.Hostname)
 	data.Description = types.StringValue(instance.Description)
-	data.PricePerHour = types.Float64Value(instance.PricePerHour)
+	data.PricePerHour = types.Float64Value(instance.PricePerHour.Float64())
 	data.Status = types.StringValue(instance.Status)
 	data.CreatedAt = types.StringValue(instance.CreatedAt.Format("2006-01-02T15:04:05Z"))
 	data.Location = types.StringValue(instance.Location)
@@ -565,107 +565,68 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 	diagnostics.Append(diags...)
 	data.SSHKeyIDs = sshKeyList
 
-	// CPU - check if it has meaningful data
-	if instance.CPU.Description != "" {
-		cpuObj, diags := types.ObjectValue(
-			map[string]attr.Type{
-				"description":     types.StringType,
-				"number_of_cores": types.Int64Type,
-			},
-			map[string]attr.Value{
-				"description":     types.StringValue(instance.CPU.Description),
-				"number_of_cores": types.Int64Value(int64(instance.CPU.NumberOfCores)),
-			},
-		)
-		diagnostics.Append(diags...)
-		data.CPU = cpuObj
-	} else {
-		data.CPU = types.ObjectNull(map[string]attr.Type{
+	cpuObj, cpuDiags := types.ObjectValue(
+		map[string]attr.Type{
 			"description":     types.StringType,
 			"number_of_cores": types.Int64Type,
-		})
-	}
+		},
+		map[string]attr.Value{
+			"description":     types.StringValue(instance.CPU.Description),
+			"number_of_cores": types.Int64Value(int64(instance.CPU.NumberOfCores)),
+		},
+	)
+	diagnostics.Append(cpuDiags...)
+	data.CPU = cpuObj
 
-	// GPU - check if it has meaningful data
-	if instance.GPU.Description != "" {
-		gpuObj, diags := types.ObjectValue(
-			map[string]attr.Type{
-				"description":    types.StringType,
-				"number_of_gpus": types.Int64Type,
-			},
-			map[string]attr.Value{
-				"description":    types.StringValue(instance.GPU.Description),
-				"number_of_gpus": types.Int64Value(int64(instance.GPU.NumberOfGPUs)),
-			},
-		)
-		diagnostics.Append(diags...)
-		data.GPU = gpuObj
-	} else {
-		data.GPU = types.ObjectNull(map[string]attr.Type{
+	gpuObj, gpuDiags := types.ObjectValue(
+		map[string]attr.Type{
 			"description":    types.StringType,
 			"number_of_gpus": types.Int64Type,
-		})
-	}
+		},
+		map[string]attr.Value{
+			"description":    types.StringValue(instance.GPU.Description),
+			"number_of_gpus": types.Int64Value(int64(instance.GPU.NumberOfGPUs)),
+		},
+	)
+	diagnostics.Append(gpuDiags...)
+	data.GPU = gpuObj
 
-	// Memory - check if it has meaningful data
-	if instance.Memory.Description != "" {
-		memoryObj, diags := types.ObjectValue(
-			map[string]attr.Type{
-				"description":       types.StringType,
-				"size_in_gigabytes": types.Int64Type,
-			},
-			map[string]attr.Value{
-				"description":       types.StringValue(instance.Memory.Description),
-				"size_in_gigabytes": types.Int64Value(int64(instance.Memory.SizeInGigabytes)),
-			},
-		)
-		diagnostics.Append(diags...)
-		data.Memory = memoryObj
-	} else {
-		data.Memory = types.ObjectNull(map[string]attr.Type{
+	gpuMemoryObj, gpuMemDiags := types.ObjectValue(
+		map[string]attr.Type{
 			"description":       types.StringType,
 			"size_in_gigabytes": types.Int64Type,
-		})
-	}
+		},
+		map[string]attr.Value{
+			"description":       types.StringValue(instance.GPUMemory.Description),
+			"size_in_gigabytes": types.Int64Value(int64(instance.GPUMemory.SizeInGigabytes)),
+		},
+	)
+	diagnostics.Append(gpuMemDiags...)
+	data.GPUMemory = gpuMemoryObj
 
-	// GPU Memory - check if it has meaningful data
-	if instance.GPUMemory.Description != "" {
-		gpuMemoryObj, diags := types.ObjectValue(
-			map[string]attr.Type{
-				"description":       types.StringType,
-				"size_in_gigabytes": types.Int64Type,
-			},
-			map[string]attr.Value{
-				"description":       types.StringValue(instance.GPUMemory.Description),
-				"size_in_gigabytes": types.Int64Value(int64(instance.GPUMemory.SizeInGigabytes)),
-			},
-		)
-		diagnostics.Append(diags...)
-		data.GPUMemory = gpuMemoryObj
-	} else {
-		data.GPUMemory = types.ObjectNull(map[string]attr.Type{
+	memoryObj, memDiags := types.ObjectValue(
+		map[string]attr.Type{
 			"description":       types.StringType,
 			"size_in_gigabytes": types.Int64Type,
-		})
-	}
+		},
+		map[string]attr.Value{
+			"description":       types.StringValue(instance.Memory.Description),
+			"size_in_gigabytes": types.Int64Value(int64(instance.Memory.SizeInGigabytes)),
+		},
+	)
+	diagnostics.Append(memDiags...)
+	data.Memory = memoryObj
 
-	// Storage - check if it has meaningful data
-	if instance.Storage.Description != "" {
-		storageObj, diags := types.ObjectValue(
-			map[string]attr.Type{
-				"description": types.StringType,
-			},
-			map[string]attr.Value{
-				"description": types.StringValue(instance.Storage.Description),
-			},
-		)
-		diagnostics.Append(diags...)
-		data.Storage = storageObj
-	} else {
-		data.Storage = types.ObjectNull(map[string]attr.Type{
+	storageObj, storDiags := types.ObjectValue(
+		map[string]attr.Type{
 			"description": types.StringType,
-		})
-	}
+		},
+		map[string]attr.Value{
+			"description": types.StringValue(instance.Storage.Description),
+		},
+	)
+	diagnostics.Append(storDiags...)
+	data.Storage = storageObj
 }
 
 // Custom plan modifier for bool default value
