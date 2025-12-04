@@ -96,7 +96,7 @@ func (r *StartupScriptResource) Create(ctx context.Context, req resource.CreateR
 		Script: data.Script.ValueString(),
 	}
 
-	script, err := r.client.StartupScripts.Create(ctx, createReq)
+	script, err := r.client.StartupScripts.AddStartupScript(ctx, &createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create startup script, got error: %s", err))
 		return
@@ -117,7 +117,7 @@ func (r *StartupScriptResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
-	script, err := r.client.StartupScripts.GetByID(ctx, data.ID.ValueString())
+	script, err := r.client.StartupScripts.GetStartupScriptByID(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read startup script, got error: %s", err))
 		return
@@ -155,7 +155,7 @@ func (r *StartupScriptResource) Delete(ctx context.Context, req resource.DeleteR
 		return
 	}
 
-	err := r.client.StartupScripts.Delete(ctx, data.ID.ValueString())
+	err := r.client.StartupScripts.DeleteStartupScript(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete startup script, got error: %s", err))
 		return

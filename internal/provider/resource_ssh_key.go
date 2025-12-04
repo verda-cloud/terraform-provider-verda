@@ -104,7 +104,7 @@ func (r *SSHKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 		PublicKey: data.PublicKey.ValueString(),
 	}
 
-	sshKey, err := r.client.SSHKeys.Create(ctx, createReq)
+	sshKey, err := r.client.SSHKeys.AddSSHKey(ctx, &createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create SSH key, got error: %s", err))
 		return
@@ -126,7 +126,7 @@ func (r *SSHKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	sshKey, err := r.client.SSHKeys.GetByID(ctx, data.ID.ValueString())
+	sshKey, err := r.client.SSHKeys.GetSSHKeyByID(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read SSH key, got error: %s", err))
 		return
@@ -165,7 +165,7 @@ func (r *SSHKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.SSHKeys.Delete(ctx, data.ID.ValueString())
+	err := r.client.SSHKeys.DeleteSSHKey(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete SSH key, got error: %s", err))
 		return

@@ -127,10 +127,10 @@ func (r *VolumeResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	createReq := verda.VolumeCreateRequest{
-		Name:     data.Name.ValueString(),
-		Size:     int(data.Size.ValueInt64()),
-		Type:     data.Type.ValueString(),
-		Location: data.Location.ValueString(),
+		Name:         data.Name.ValueString(),
+		Size:         int(data.Size.ValueInt64()),
+		Type:         data.Type.ValueString(),
+		LocationCode: data.Location.ValueString(),
 	}
 
 	volumeID, err := r.client.Volumes.CreateVolume(ctx, createReq)
@@ -175,7 +175,7 @@ func (r *VolumeResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	volume, err := r.client.Volumes.GetByID(ctx, data.ID.ValueString())
+	volume, err := r.client.Volumes.GetVolume(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read volume, got error: %s", err))
 		return
@@ -221,7 +221,7 @@ func (r *VolumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.Volumes.Delete(ctx, data.ID.ValueString(), false)
+	err := r.client.Volumes.DeleteVolume(ctx, data.ID.ValueString(), false)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete volume, got error: %s", err))
 		return

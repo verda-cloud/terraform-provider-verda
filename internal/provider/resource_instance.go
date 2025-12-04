@@ -409,10 +409,10 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		var volumeReqs []verda.VolumeCreateRequest
 		for _, vol := range volumes {
 			volumeReqs = append(volumeReqs, verda.VolumeCreateRequest{
-				Name:     vol.Name.ValueString(),
-				Size:     int(vol.Size.ValueInt64()),
-				Type:     vol.Type.ValueString(),
-				Location: vol.Location.ValueString(),
+				Name:         vol.Name.ValueString(),
+				Size:         int(vol.Size.ValueInt64()),
+				Type:         vol.Type.ValueString(),
+				LocationCode: vol.Location.ValueString(),
 			})
 		}
 		createReq.Volumes = volumeReqs
@@ -437,7 +437,6 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		createReq.OSVolume = &verda.OSVolumeCreateRequest{
 			Name: osVolume.Name.ValueString(),
 			Size: int(osVolume.Size.ValueInt64()),
-			Type: osVolume.Type.ValueString(),
 		}
 	}
 
