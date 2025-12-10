@@ -468,17 +468,9 @@ func (r *ServerlessJobResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
-	// Also fetch scaling configuration
-	scalingConfig, err := r.client.ServerlessJobs.GetJobDeploymentScaling(ctx, data.Name.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read scaling configuration, got error: %s", err))
-		return
-	}
-
 	// Preserve container configuration from prior state
 	priorContainers := data.Containers
 	r.flattenJobDeploymentToModel(ctx, deployment, &data, &resp.Diagnostics)
-	r.flattenJobScalingToModel(ctx, scalingConfig, &data, &resp.Diagnostics)
 	r.mergeJobContainersFromPlan(ctx, priorContainers, &data, &resp.Diagnostics)
 
 	if resp.Diagnostics.HasError() {
@@ -542,6 +534,24 @@ func (r *ServerlessJobResource) flattenJobDeploymentToModel(ctx context.Context,
 		)
 		diagnostics.Append(diags...)
 		data.Compute = computeObj
+	}
+
+	// Flatten scaling
+	if deployment.Scaling != nil {
+		scalingObj, diags := types.ObjectValue(
+			map[string]attr.Type{
+				"max_replica_count":         types.Int64Type,
+				"queue_message_ttl_seconds": types.Int64Type,
+				"deadline_seconds":          types.Int64Type,
+			},
+			map[string]attr.Value{
+				"max_replica_count":         types.Int64Value(int64(deployment.Scaling.MaxReplicaCount)),
+				"queue_message_ttl_seconds": types.Int64Value(int64(deployment.Scaling.QueueMessageTTLSeconds)),
+				"deadline_seconds":          types.Int64Value(int64(deployment.Scaling.DeadlineSeconds)),
+			},
+		)
+		diagnostics.Append(diags...)
+		data.Scaling = scalingObj
 	}
 
 	// Flatten container registry settings
@@ -857,23 +867,6 @@ func (r *ServerlessJobResource) flattenJobContainersToModel(ctx context.Context,
 	)
 	diagnostics.Append(diags...)
 	data.Containers = containersList
-}
-
-func (r *ServerlessJobResource) flattenJobScalingToModel(ctx context.Context, scalingConfig *verda.ContainerScalingOptions, data *ServerlessJobResourceModel, diagnostics *diag.Diagnostics) {
-	scalingObj, diags := types.ObjectValue(
-		map[string]attr.Type{
-			"max_replica_count":         types.Int64Type,
-			"queue_message_ttl_seconds": types.Int64Type,
-			"deadline_seconds":          types.Int64Type,
-		},
-		map[string]attr.Value{
-			"max_replica_count":         types.Int64Value(int64(scalingConfig.MaxReplicaCount)),
-			"queue_message_ttl_seconds": types.Int64Value(int64(scalingConfig.QueueMessageTTLSeconds)),
-			"deadline_seconds":          types.Int64Value(int64(scalingConfig.DeadlineSeconds)),
-		},
-	)
-	diagnostics.Append(diags...)
-	data.Scaling = scalingObj
 }
 
 func (r *ServerlessJobResource) mergeJobContainersFromPlan(ctx context.Context, planContainers types.List, data *ServerlessJobResourceModel, diagnostics *diag.Diagnostics) {
