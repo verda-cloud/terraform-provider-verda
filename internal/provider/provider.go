@@ -147,5 +147,41 @@ func (p *VerdaProvider) Resources(ctx context.Context) []func() resource.Resourc
 }
 
 func (p *VerdaProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewBalanceDataSource,
+		NewLocationsDataSource,
+		NewImagesDataSource,
+		NewClusterImagesDataSource,
+		NewInstanceTypesDataSource,
+		NewInstanceTypePriceHistoryDataSource,
+		NewInstanceAvailabilityDataSource,
+		NewInstanceTypeAvailabilityDataSource,
+		NewClusterTypesDataSource,
+		NewClusterAvailabilityDataSource,
+		NewClusterTypeAvailabilityDataSource,
+		NewContainerTypesDataSource,
+		NewVolumeTypesDataSource,
+		NewServerlessComputeResourcesDataSource,
+		NewLongTermPeriodsDataSource,
+		NewLongTermInstancePeriodsDataSource,
+		NewLongTermClusterPeriodsDataSource,
+		NewInstancesDataSource,
+		NewVolumesDataSource,
+		NewClustersDataSource,
+		NewContainerDeploymentsDataSource,
+		NewJobDeploymentsDataSource,
+		NewContainerRegistryCredentialsDataSource,
+		NewSSHKeysDataSource,
+		NewStartupScriptsDataSource,
+		NewSecretsDataSource,
+		NewFileSecretsDataSource,
+		NewContainerDeploymentStatusDataSource,
+		NewContainerDeploymentReplicasDataSource,
+		NewContainerDeploymentScalingDataSource,
+		NewJobDeploymentStatusDataSource,
+		NewJobDeploymentScalingDataSource,
+		NewVolumeTrashDataSource,
+		NewInstanceTypesDeprecatedDataSource,
+		NewInstanceAvailabilityDeprecatedDataSource,
+	}
 }
