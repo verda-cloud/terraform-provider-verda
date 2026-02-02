@@ -518,7 +518,7 @@ func (r *ServerlessJobResource) ImportState(ctx context.Context, req resource.Im
 func (r *ServerlessJobResource) flattenJobDeploymentToModel(ctx context.Context, deployment *verda.JobDeployment, data *ServerlessJobResourceModel, diagnostics *diag.Diagnostics) {
 	data.Name = types.StringValue(deployment.Name)
 	data.EndpointBaseURL = types.StringValue(deployment.EndpointBaseURL)
-	data.CreatedAt = types.StringValue(deployment.CreatedAt)
+	data.CreatedAt = types.StringValue(deployment.CreatedAt.Format("2006-01-02T15:04:05Z"))
 
 	// Flatten compute
 	if deployment.Compute != nil {

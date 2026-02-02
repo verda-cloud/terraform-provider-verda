@@ -137,7 +137,6 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `gpu_memory` (Attributes) GPU memory information. See [below for nested schema](#nestedatt--gpu_memory).
 - `id` (String) Unique instance identifier.
 - `ip` (String) Public IP address of the instance.
-- `jupyter_token` (String, Sensitive) Jupyter notebook token if applicable.
 - `memory` (Attributes) System memory information. See [below for nested schema](#nestedatt--memory).
 - `os_name` (String) Operating system name.
 - `os_volume_id` (String) ID of the OS volume.

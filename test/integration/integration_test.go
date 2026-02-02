@@ -114,6 +114,7 @@ func cleanupTestDir(t *testing.T, dir string) {
 	// Run destroy to clean up any created resources
 	cmd := exec.Command(tfCmd(), "destroy", "-auto-approve")
 	cmd.Dir = dir
+	cmd.Env = os.Environ() // Pass environment variables (credentials)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -132,6 +133,7 @@ func cleanupTestDir(t *testing.T, dir string) {
 
 		retryCmd := exec.Command(tfCmd(), "destroy", "-auto-approve")
 		retryCmd.Dir = dir
+		retryCmd.Env = os.Environ() // Pass environment variables (credentials)
 		retryOutput, retryErr := retryCmd.CombinedOutput()
 		if retryErr != nil {
 			t.Logf("Warning: retry destroy also failed: %v", retryErr)
@@ -145,6 +147,14 @@ func cleanupTestDir(t *testing.T, dir string) {
 
 	// Remove temp directory
 	os.RemoveAll(dir)
+}
+
+// registerCleanup registers cleanup to run after test completes (even on panic)
+func registerCleanup(t *testing.T, dir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		cleanupTestDir(t, dir)
+	})
 }
 
 // checkEnvVars ensures required environment variables are set
@@ -164,7 +174,7 @@ func TestSSHKeyResource(t *testing.T) {
 	checkEnvVars(t)
 
 	workDir := setupTestDir(t, "ssh_key")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -189,7 +199,7 @@ func TestStartupScriptResource(t *testing.T) {
 	checkEnvVars(t)
 
 	workDir := setupTestDir(t, "startup_script")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -211,7 +221,7 @@ func TestVolumeResource(t *testing.T) {
 	checkEnvVars(t)
 
 	workDir := setupTestDir(t, "volume")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -242,7 +252,7 @@ func TestContainerRegistryCredentialsResource(t *testing.T) {
 	}
 
 	workDir := setupTestDir(t, "container_registry_credentials")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -274,7 +284,7 @@ func TestInstanceResource(t *testing.T) {
 	}
 
 	workDir := setupTestDir(t, "instance")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -342,7 +352,7 @@ func TestContainerResource(t *testing.T) {
 	}
 
 	workDir := setupTestDir(t, "container")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -352,11 +362,11 @@ func TestContainerResource(t *testing.T) {
 
 	// Verify outputs exist
 	output := runTerraform(t, workDir, "output", "-json")
-	if !strings.Contains(output, "container_id") {
-		t.Error("Expected container_id in output")
-	}
 	if !strings.Contains(output, "container_name") {
 		t.Error("Expected container_name in output")
+	}
+	if !strings.Contains(output, "container_endpoint_base_url") {
+		t.Error("Expected container_endpoint_base_url in output")
 	}
 
 	t.Log("Container resource test passed")
@@ -372,7 +382,7 @@ func TestServerlessJobResource(t *testing.T) {
 	}
 
 	workDir := setupTestDir(t, "serverless_job")
-	defer cleanupTestDir(t, workDir)
+	registerCleanup(t, workDir)
 
 	// Init
 	runTerraform(t, workDir, "init")
@@ -382,11 +392,11 @@ func TestServerlessJobResource(t *testing.T) {
 
 	// Verify outputs exist
 	output := runTerraform(t, workDir, "output", "-json")
-	if !strings.Contains(output, "job_id") {
-		t.Error("Expected job_id in output")
-	}
 	if !strings.Contains(output, "job_name") {
 		t.Error("Expected job_name in output")
+	}
+	if !strings.Contains(output, "job_endpoint_base_url") {
+		t.Error("Expected job_endpoint_base_url in output")
 	}
 
 	t.Log("Serverless Job resource test passed")

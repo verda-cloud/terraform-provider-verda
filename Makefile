@@ -13,7 +13,7 @@
 #   make clean         - Clean build artifacts
 #
 
-.PHONY: help build install test test-integration test-quick pre-commit lint security fmt clean release
+.PHONY: help build install test test-integration pre-commit lint security fmt clean clean-test release
 
 # Default target
 .DEFAULT_GOAL := help
@@ -43,8 +43,7 @@ help:
 	@echo ""
 	@echo "$(GREEN)Testing:$(RESET)"
 	@echo "  make test            Run unit tests"
-	@echo "  make test-quick      Run quick integration tests (no GPU resources)"
-	@echo "  make test-integration Run all integration tests"
+	@echo "  make test-integration Run integration tests (requires .env with credentials)"
 	@echo ""
 	@echo "$(GREEN)Code Quality:$(RESET)"
 	@echo "  make pre-commit      Run ALL pre-commit checks (recommended before commit)"
@@ -55,6 +54,9 @@ help:
 	@echo "$(GREEN)Maintenance:$(RESET)"
 	@echo "  make clean           Clean build artifacts"
 	@echo "  make deps            Download dependencies"
+	@echo ""
+	@echo "$(GREEN)Release:$(RESET)"
+	@echo "  make release VERSION=vX.Y.Z  Prepare a new release (updates CHANGELOG.md)"
 	@echo ""
 
 # Build the provider
@@ -75,15 +77,16 @@ test:
 	@echo "$(CYAN)Running unit tests...$(RESET)"
 	$(GO) test -v -short ./...
 
-# Run quick integration tests (skip expensive GPU resources)
-test-quick:
-	@echo "$(CYAN)Running quick integration tests...$(RESET)"
-	./scripts/run-integration-tests.sh --quick
-
-# Run all integration tests
+# Run integration tests
 test-integration:
-	@echo "$(CYAN)Running all integration tests...$(RESET)"
-	./scripts/run-integration-tests.sh --all
+	@echo "$(CYAN)Running integration tests...$(RESET)"
+	@if [ -f .env ]; then \
+		echo "$(YELLOW)Loading environment from .env...$(RESET)"; \
+		set -a && . ./.env && set +a && ./scripts/run-integration-tests.sh; \
+	else \
+		echo "$(YELLOW)No .env file found, running without additional env vars...$(RESET)"; \
+		./scripts/run-integration-tests.sh; \
+	fi
 
 # Run ALL pre-commit checks (linting, security, formatting)
 pre-commit:
@@ -153,3 +156,14 @@ clean:
 clean-test:
 	@echo "$(CYAN)Cleaning test resources...$(RESET)"
 	./scripts/run-integration-tests.sh --cleanup-only
+
+# Release management
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "$(RED)Error: VERSION is required$(RESET)"; \
+		echo "Usage: make release VERSION=v1.0.0"; \
+		exit 1; \
+	fi
+	@echo "$(CYAN)Preparing release $(VERSION)...$(RESET)"
+	@./scripts/release.sh $(VERSION)
+	@echo "$(GREEN)Release $(VERSION) prepared. Review CHANGELOG.md and commit.$(RESET)"

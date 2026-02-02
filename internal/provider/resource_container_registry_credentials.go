@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -237,7 +238,7 @@ func (r *ContainerRegistryCredentialsResource) Create(ctx context.Context, req r
 	var found bool
 	for _, cred := range credentials {
 		if cred.Name == data.Name.ValueString() {
-			data.CreatedAt = types.StringValue(cred.CreatedAt)
+			data.CreatedAt = types.StringValue(cred.CreatedAt.Format(time.RFC3339))
 			found = true
 			break
 		}
@@ -269,7 +270,7 @@ func (r *ContainerRegistryCredentialsResource) Read(ctx context.Context, req res
 	var found bool
 	for _, cred := range credentials {
 		if cred.Name == data.Name.ValueString() {
-			data.CreatedAt = types.StringValue(cred.CreatedAt)
+			data.CreatedAt = types.StringValue(cred.CreatedAt.Format(time.RFC3339))
 			found = true
 			break
 		}

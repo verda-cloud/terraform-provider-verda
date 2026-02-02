@@ -39,14 +39,14 @@ resource "verda_container" "test" {
 }
 
 # Output container information for verification
-output "container_id" {
-  value = verda_container.test.id
-}
-
 output "container_name" {
   value = verda_container.test.name
 }
 
-output "container_endpoint" {
-  value = verda_container.test.endpoint
+output "container_endpoint_base_url" {
+  value = verda_container.test.endpoint_base_url
+}
+
+output "container_created_at" {
+  value = verda_container.test.created_at
 }

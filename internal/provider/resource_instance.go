@@ -52,7 +52,6 @@ type InstanceResourceModel struct {
 	Memory          types.Object  `tfsdk:"memory"`
 	GPUMemory       types.Object  `tfsdk:"gpu_memory"`
 	Storage         types.Object  `tfsdk:"storage"`
-	JupyterToken    types.String  `tfsdk:"jupyter_token"`
 	Volumes         types.List    `tfsdk:"volumes"`
 	ExistingVolumes types.List    `tfsdk:"existing_volumes"`
 	OSVolume        types.Object  `tfsdk:"os_volume"`
@@ -282,11 +281,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					objectplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"jupyter_token": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Jupyter token if applicable",
-				Sensitive:           true,
-			},
 			"volumes": schema.ListNestedAttribute{
 				MarkdownDescription: "Volumes to create and attach to the instance",
 				Optional:            true,
@@ -510,7 +504,7 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	err := r.client.Instances.Delete(ctx, data.ID.ValueString(), nil)
+	err := r.client.Instances.Delete(ctx, []string{}, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete instance, got error: %s", err))
 		return
@@ -552,12 +546,6 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 		data.StartupScriptID = types.StringValue(*instance.StartupScriptID)
 	} else {
 		data.StartupScriptID = types.StringNull()
-	}
-
-	if instance.JupyterToken != nil {
-		data.JupyterToken = types.StringValue(*instance.JupyterToken)
-	} else {
-		data.JupyterToken = types.StringNull()
 	}
 
 	sshKeyList, diags := types.ListValueFrom(ctx, types.StringType, instance.SSHKeyIDs)

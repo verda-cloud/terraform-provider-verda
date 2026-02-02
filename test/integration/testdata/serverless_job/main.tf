@@ -25,14 +25,14 @@ resource "verda_serverless_job" "test" {
 }
 
 # Output serverless job information for verification
-output "job_id" {
-  value = verda_serverless_job.test.id
-}
-
 output "job_name" {
   value = verda_serverless_job.test.name
 }
 
-output "job_endpoint" {
-  value = verda_serverless_job.test.endpoint
+output "job_endpoint_base_url" {
+  value = verda_serverless_job.test.endpoint_base_url
+}
+
+output "job_created_at" {
+  value = verda_serverless_job.test.created_at
 }
