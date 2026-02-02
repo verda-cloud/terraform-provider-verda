@@ -218,16 +218,16 @@ run_tests() {
 # Clean up temporary test directories and resources
 cleanup_test_resources() {
     info "Cleaning up test resources..."
-    
+
     local found=0
     local cleanup_failed=0
-    
+
     # Find all temp test directories
     for dir in /tmp/verda-integration-test-* /tmp/verda-test-*; do
         if [[ -d "$dir" ]]; then
             found=1
             info "Found test directory: $dir"
-            
+
             # Try to run terraform destroy if state exists
             if [[ -f "$dir/terraform.tfstate" ]]; then
                 info "Running $TF_TOOL destroy in $dir..."
@@ -240,17 +240,17 @@ cleanup_test_resources() {
                 fi
                 cd - > /dev/null
             fi
-            
+
             # Remove the directory
             rm -rf "$dir"
             success "Removed: $dir"
         fi
     done
-    
+
     if [[ $found -eq 0 ]]; then
         info "No temporary test directories found"
     fi
-    
+
     return $cleanup_failed
 }
 
@@ -288,11 +288,11 @@ main() {
 
     build_provider
     install_provider_locally
-    
+
     # Run tests and capture result
     local test_result=0
     run_tests || test_result=$?
-    
+
     # Always run cleanup after tests
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -300,9 +300,9 @@ main() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     cleanup_test_resources || true
-    
+
     print_summary
-    
+
     # Exit with test result
     exit $test_result
 }

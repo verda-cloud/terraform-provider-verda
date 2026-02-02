@@ -67,7 +67,7 @@ The script automatically:
    ```bash
    # From the repository root
    go build -o terraform-provider-verda
-   
+
    # Install to local plugins directory (use version 99.0.0 for dev)
    mkdir -p ~/.terraform.d/plugins/verda-cloud/verda/99.0.0/$(go env GOOS)_$(go env GOARCH)
    cp terraform-provider-verda ~/.terraform.d/plugins/verda-cloud/verda/99.0.0/$(go env GOOS)_$(go env GOARCH)/
