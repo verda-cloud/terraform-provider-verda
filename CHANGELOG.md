@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.1.0] - 2026-02-03
+
 ### Changed
 - chore(deps): Update verdacloud-sdk-go from v1.1.2 to v1.2.0
 - refactor(Makefile): Auto-load .env file before running integration tests
