@@ -104,16 +104,89 @@ The Verda provider includes the following resources:
 
 ### Compute
 
+- [verda_cluster](resources/cluster.md) - GPU clusters
 - [verda_instance](resources/instance.md) - GPU compute instances
+- [verda_instance_action](resources/instance_action.md) - Instance actions
 - [verda_ssh_key](resources/ssh_key.md) - SSH keys for instance access
+- [verda_ssh_key_bulk_delete](resources/ssh_key_bulk_delete.md) - Bulk SSH key deletion
 - [verda_startup_script](resources/startup_script.md) - Startup scripts for instance initialization
+- [verda_startup_script_bulk_delete](resources/startup_script_bulk_delete.md) - Bulk startup script deletion
 
 ### Storage
 
 - [verda_volume](resources/volume.md) - Persistent NVMe storage volumes
+- [verda_volume_action](resources/volume_action.md) - Volume actions
 
 ### Containers
 
 - [verda_container](resources/container.md) - Serverless container deployments with auto-scaling
+- [verda_container_scaling](resources/container_scaling.md) - Deployment scaling settings
+- [verda_container_environment_variables](resources/container_environment_variables.md) - Deployment environment variables
+- [verda_container_action](resources/container_action.md) - Deployment actions
 - [verda_serverless_job](resources/serverless_job.md) - Batch job deployments
+- [verda_job_action](resources/job_action.md) - Job deployment actions
 - [verda_container_registry_credentials](resources/container_registry_credentials.md) - Private registry authentication
+
+### Secrets
+
+- [verda_secret](resources/secret.md) - Secrets for deployments
+- [verda_file_secret](resources/file_secret.md) - Fileset secrets for mounts
+
+## Data Sources
+
+### Account and Locations
+
+- `verda_balance` - Account balance
+- `verda_locations` - Available locations
+
+### Images and Types
+
+- `verda_images` - Instance images
+- `verda_cluster_images` - Cluster images
+- `verda_instance_types` - Instance types
+- `verda_instance_type_price_history` - Instance price history
+- `verda_container_types` - Container types
+- `verda_cluster_types` - Cluster types
+- `verda_volume_types` - Volume types
+- `verda_serverless_compute_resources` - Serverless compute resources
+
+### Availability
+
+- `verda_instance_availability` - Instance availability by location
+- `verda_instance_type_availability` - Instance type availability
+- `verda_cluster_availability` - Cluster availability by location
+- `verda_cluster_type_availability` - Cluster type availability
+
+### Long-Term Periods
+
+- `verda_long_term_periods` - All long-term periods
+- `verda_long_term_instance_periods` - Instance long-term periods
+- `verda_long_term_cluster_periods` - Cluster long-term periods
+
+### Resources
+
+- `verda_instances` - Instances list
+- `verda_volumes` - Volumes list
+- `verda_volumes_trash` - Volumes in trash
+- `verda_clusters` - Clusters list
+- `verda_container_deployments` - Container deployments list
+- `verda_job_deployments` - Job deployments list
+- `verda_container_registry_credentials` - Registry credentials list
+- `verda_ssh_keys` - SSH keys list
+- `verda_startup_scripts` - Startup scripts list
+- `verda_secrets` - Secrets list
+- `verda_file_secrets` - File secrets list
+
+### Deployment Insights
+
+- `verda_container_environment_variables` - Container env vars
+- `verda_container_deployment_status` - Container deployment status
+- `verda_container_deployment_replicas` - Container deployment replicas
+- `verda_container_deployment_scaling` - Container deployment scaling
+- `verda_job_deployment_status` - Job deployment status
+- `verda_job_deployment_scaling` - Job deployment scaling
+
+### Deprecated
+
+- `verda_instance_types_deprecated` - Deprecated instance types endpoint
+- `verda_instance_availability_deprecated` - Deprecated availability endpoint

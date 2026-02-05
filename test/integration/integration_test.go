@@ -272,6 +272,56 @@ func TestContainerRegistryCredentialsResource(t *testing.T) {
 	t.Log("Container Registry Credentials resource test passed")
 }
 
+// TestSecretResource tests the secret resource following documentation examples
+func TestSecretResource(t *testing.T) {
+	checkEnvVars(t)
+
+	workDir := setupTestDir(t, "secret")
+	defer cleanupTestDir(t, workDir)
+
+	// Init
+	runTerraform(t, workDir, "init")
+
+	// Apply
+	runTerraform(t, workDir, "apply", "-auto-approve")
+
+	// Verify outputs exist
+	output := runTerraform(t, workDir, "output", "-json")
+	if !strings.Contains(output, "secret_name") {
+		t.Error("Expected secret_name in output")
+	}
+	if !strings.Contains(output, "secret_type") {
+		t.Error("Expected secret_type in output")
+	}
+
+	t.Log("Secret resource test passed")
+}
+
+// TestFileSecretResource tests the file secret resource following documentation examples
+func TestFileSecretResource(t *testing.T) {
+	checkEnvVars(t)
+
+	workDir := setupTestDir(t, "file_secret")
+	defer cleanupTestDir(t, workDir)
+
+	// Init
+	runTerraform(t, workDir, "init")
+
+	// Apply
+	runTerraform(t, workDir, "apply", "-auto-approve")
+
+	// Verify outputs exist
+	output := runTerraform(t, workDir, "output", "-json")
+	if !strings.Contains(output, "file_secret_name") {
+		t.Error("Expected file_secret_name in output")
+	}
+	if !strings.Contains(output, "file_secret_file_names") {
+		t.Error("Expected file_secret_file_names in output")
+	}
+
+	t.Log("File secret resource test passed")
+}
+
 // TestInstanceResource tests the instance resource following documentation examples
 // Note: This test creates real GPU instances and may incur costs
 // The test waits up to 5 minutes for the instance to be fully deployed
@@ -413,6 +463,8 @@ func TestAllResources(t *testing.T) {
 	t.Run("StartupScript", TestStartupScriptResource)
 	t.Run("Volume", TestVolumeResource)
 	t.Run("ContainerRegistryCredentials", TestContainerRegistryCredentialsResource)
+	t.Run("Secret", TestSecretResource)
+	t.Run("FileSecret", TestFileSecretResource)
 	t.Run("Instance", TestInstanceResource)
 	t.Run("Container", TestContainerResource)
 	t.Run("ServerlessJob", TestServerlessJobResource)

@@ -640,11 +640,254 @@ func (r *ContainerResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	// Container deployments cannot be updated, only deleted and recreated
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"Container deployments cannot be updated. Please delete and recreate the resource with new values.",
-	)
+	updateReq := &verda.UpdateDeploymentRequest{}
+
+	if !data.IsSpot.IsNull() && !data.IsSpot.IsUnknown() {
+		isSpot := data.IsSpot.ValueBool()
+		updateReq.IsSpot = &isSpot
+	}
+
+	// Parse compute
+	var compute ComputeModel
+	resp.Diagnostics.Append(data.Compute.As(ctx, &compute, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	updateReq.Compute = &verda.ContainerCompute{
+		Name: compute.Name.ValueString(),
+		Size: int(compute.Size.ValueInt64()),
+	}
+
+	// Parse scaling
+	var scaling ScalingModel
+	resp.Diagnostics.Append(data.Scaling.As(ctx, &scaling, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	scalingOptions := verda.ContainerScalingOptions{
+		MinReplicaCount:              int(scaling.MinReplicaCount.ValueInt64()),
+		MaxReplicaCount:              int(scaling.MaxReplicaCount.ValueInt64()),
+		QueueMessageTTLSeconds:       int(scaling.QueueMessageTTLSeconds.ValueInt64()),
+		ConcurrentRequestsPerReplica: int(scaling.ConcurrentRequestsPerReplica.ValueInt64()),
+	}
+
+	// Parse scale down policy
+	var scaleDownPolicy ScalingPolicyModel
+	resp.Diagnostics.Append(scaling.ScaleDownPolicy.As(ctx, &scaleDownPolicy, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	scalingOptions.ScaleDownPolicy = &verda.ScalingPolicy{
+		DelaySeconds: int(scaleDownPolicy.DelaySeconds.ValueInt64()),
+	}
+
+	// Parse scale up policy
+	var scaleUpPolicy ScalingPolicyModel
+	resp.Diagnostics.Append(scaling.ScaleUpPolicy.As(ctx, &scaleUpPolicy, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	scalingOptions.ScaleUpPolicy = &verda.ScalingPolicy{
+		DelaySeconds: int(scaleUpPolicy.DelaySeconds.ValueInt64()),
+	}
+
+	// Parse queue load trigger
+	var queueLoad QueueLoadTriggerModel
+	resp.Diagnostics.Append(scaling.QueueLoad.As(ctx, &queueLoad, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	scalingOptions.ScalingTriggers = &verda.ScalingTriggers{
+		QueueLoad: &verda.QueueLoadTrigger{
+			Threshold: queueLoad.Threshold.ValueFloat64(),
+		},
+	}
+
+	// Preserve CPU/GPU utilization triggers if present
+	currentScaling, err := r.client.ContainerDeployments.GetDeploymentScaling(ctx, data.Name.ValueString())
+	if err == nil && currentScaling != nil && currentScaling.ScalingTriggers != nil {
+		if currentScaling.ScalingTriggers.CPUUtilization != nil {
+			scalingOptions.ScalingTriggers.CPUUtilization = currentScaling.ScalingTriggers.CPUUtilization
+		}
+		if currentScaling.ScalingTriggers.GPUUtilization != nil {
+			scalingOptions.ScalingTriggers.GPUUtilization = currentScaling.ScalingTriggers.GPUUtilization
+		}
+	}
+
+	updateReq.Scaling = &scalingOptions
+
+	// Parse container registry settings if provided
+	if !data.ContainerRegistrySettings.IsNull() && !data.ContainerRegistrySettings.IsUnknown() {
+		var registrySettings RegistrySettingsModel
+		resp.Diagnostics.Append(data.ContainerRegistrySettings.As(ctx, &registrySettings, basetypes.ObjectAsOptions{})...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		isPrivate := registrySettings.IsPrivate.ValueString() == "true"
+		updateReq.ContainerRegistrySettings = &verda.ContainerRegistrySettings{
+			IsPrivate: isPrivate,
+		}
+
+		if !registrySettings.Credentials.IsNull() && registrySettings.Credentials.ValueString() != "" {
+			updateReq.ContainerRegistrySettings.Credentials = &verda.RegistryCredentialsRef{
+				Name: registrySettings.Credentials.ValueString(),
+			}
+		}
+	}
+
+	// Parse containers
+	var containers []ContainerModel
+	resp.Diagnostics.Append(data.Containers.ElementsAs(ctx, &containers, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	var deploymentContainers []verda.CreateDeploymentContainer
+	for _, container := range containers {
+		deploymentContainer := verda.CreateDeploymentContainer{
+			Image:       container.Image.ValueString(),
+			ExposedPort: int(container.ExposedPort.ValueInt64()),
+		}
+
+		// Parse healthcheck if provided
+		if !container.Healthcheck.IsNull() {
+			var healthcheck HealthcheckModel
+			resp.Diagnostics.Append(container.Healthcheck.As(ctx, &healthcheck, basetypes.ObjectAsOptions{})...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			enabled := healthcheck.Enabled.ValueString() == "true"
+			hc := &verda.ContainerHealthcheck{
+				Enabled: enabled,
+			}
+
+			if !healthcheck.Port.IsNull() && healthcheck.Port.ValueString() != "" {
+				var port int
+				_, err := fmt.Sscanf(healthcheck.Port.ValueString(), "%d", &port)
+				if err == nil {
+					hc.Port = port
+				}
+			}
+
+			if !healthcheck.Path.IsNull() {
+				hc.Path = healthcheck.Path.ValueString()
+			}
+
+			deploymentContainer.Healthcheck = hc
+		}
+
+		// Parse entrypoint overrides if provided
+		if !container.EntrypointOverrides.IsNull() && !container.EntrypointOverrides.IsUnknown() {
+			var entrypointOverrides EntrypointOverridesModel
+			resp.Diagnostics.Append(container.EntrypointOverrides.As(ctx, &entrypointOverrides, basetypes.ObjectAsOptions{})...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			overrides := &verda.ContainerEntrypointOverrides{
+				Enabled: entrypointOverrides.Enabled.ValueBool(),
+			}
+
+			if !entrypointOverrides.Entrypoint.IsNull() && !entrypointOverrides.Entrypoint.IsUnknown() {
+				var entrypoint []string
+				resp.Diagnostics.Append(entrypointOverrides.Entrypoint.ElementsAs(ctx, &entrypoint, false)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				overrides.Entrypoint = entrypoint
+			}
+
+			if !entrypointOverrides.Cmd.IsNull() && !entrypointOverrides.Cmd.IsUnknown() {
+				var cmd []string
+				resp.Diagnostics.Append(entrypointOverrides.Cmd.ElementsAs(ctx, &cmd, false)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				overrides.Cmd = cmd
+			}
+
+			deploymentContainer.EntrypointOverrides = overrides
+		}
+
+		// Parse environment variables if provided
+		if !container.Env.IsNull() {
+			var envVars []EnvVarModel
+			resp.Diagnostics.Append(container.Env.ElementsAs(ctx, &envVars, false)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			var containerEnvVars []verda.ContainerEnvVar
+			for _, envVar := range envVars {
+				containerEnvVars = append(containerEnvVars, verda.ContainerEnvVar{
+					Type:                     envVar.Type.ValueString(),
+					Name:                     envVar.Name.ValueString(),
+					ValueOrReferenceToSecret: envVar.ValueOrReferenceToSecret.ValueString(),
+				})
+			}
+			deploymentContainer.Env = containerEnvVars
+		}
+
+		// Parse volume mounts if provided
+		if !container.VolumeMounts.IsNull() {
+			var volumeMounts []VolumeMountModel
+			resp.Diagnostics.Append(container.VolumeMounts.ElementsAs(ctx, &volumeMounts, false)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			var containerVolumeMounts []verda.ContainerVolumeMount
+			for _, volumeMount := range volumeMounts {
+				mount := verda.ContainerVolumeMount{
+					Type:      volumeMount.Type.ValueString(),
+					MountPath: volumeMount.MountPath.ValueString(),
+				}
+
+				if !volumeMount.SecretName.IsNull() && volumeMount.SecretName.ValueString() != "" {
+					mount.SecretName = volumeMount.SecretName.ValueString()
+				}
+
+				if !volumeMount.SizeInMB.IsNull() {
+					mount.SizeInMB = int(volumeMount.SizeInMB.ValueInt64())
+				}
+
+				if !volumeMount.VolumeID.IsNull() && volumeMount.VolumeID.ValueString() != "" {
+					mount.VolumeID = volumeMount.VolumeID.ValueString()
+				}
+
+				containerVolumeMounts = append(containerVolumeMounts, mount)
+			}
+			deploymentContainer.VolumeMounts = containerVolumeMounts
+		}
+
+		deploymentContainers = append(deploymentContainers, deploymentContainer)
+	}
+
+	updateReq.Containers = deploymentContainers
+
+	deployment, err := r.client.ContainerDeployments.UpdateDeployment(ctx, data.Name.ValueString(), updateReq)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update container deployment, got error: %s", err))
+		return
+	}
+
+	// Fetch scaling configuration after update
+	scalingConfig, err := r.client.ContainerDeployments.GetDeploymentScaling(ctx, data.Name.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read scaling configuration, got error: %s", err))
+		return
+	}
+
+	planContainers := data.Containers
+	r.flattenDeploymentToModel(ctx, deployment, &data, &resp.Diagnostics)
+	r.flattenScalingToModel(ctx, scalingConfig, &data, &resp.Diagnostics)
+	r.mergeContainersFromPlan(ctx, planContainers, &data, &resp.Diagnostics)
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *ContainerResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
