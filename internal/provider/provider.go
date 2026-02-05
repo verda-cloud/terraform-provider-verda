@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -107,9 +108,13 @@ func (p *VerdaProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
+	// Construct User-Agent: verda-terraform-provider/{provider_version}(terraform/{terraform_version})
+	userAgent := fmt.Sprintf("verda-terraform-provider/%s(terraform/%s)", p.version, req.TerraformVersion)
+
 	opts := []verda.ClientOption{
 		verda.WithClientID(clientID),
 		verda.WithClientSecret(clientSecret),
+		verda.WithUserAgent(userAgent),
 	}
 
 	if baseURL != "" {

@@ -4,7 +4,7 @@ go 1.24.3
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
-	github.com/verda-cloud/verdacloud-sdk-go v1.2.0
+	github.com/verda-cloud/verdacloud-sdk-go v1.2.1
 )
 
 require (
