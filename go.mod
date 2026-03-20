@@ -1,10 +1,12 @@
 module github.com/verda-cloud/terraform-provider-verda
 
-go 1.24.3
+go 1.25
+
+toolchain go1.25.8
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
-	github.com/verda-cloud/verdacloud-sdk-go v1.2.2
+	github.com/verda-cloud/verdacloud-sdk-go v1.3.0
 )
 
 require (

@@ -5,7 +5,7 @@ Terraform/OpenTofu provider for managing Verda Cloud infrastructure.
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.23 (for development)
+- [Go](https://golang.org/doc/install) >= 1.25 (for development)
 - Verda Cloud account with API credentials (Client ID and Client Secret)
 
 ## Beta version
@@ -131,6 +131,15 @@ resource "verda_instance" "example" {
   existing_volumes = [verda_volume.example.id]
 }
 ```
+
+### Data Sources
+
+The provider currently supports the following data sources for serverless jobs:
+
+- `verda_serverless_job`
+- `verda_serverless_jobs`
+- `verda_serverless_job_scaling`
+- `verda_serverless_job_status`
 
 ## Building the Provider
 

@@ -504,7 +504,7 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	err := r.client.Instances.Delete(ctx, []string{}, data.ID.ValueString())
+	err := r.client.Instances.Delete(ctx, []string{data.ID.ValueString()}, nil, false)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete instance, got error: %s", err))
 		return

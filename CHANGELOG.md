@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(serverless-jobs): Add data sources for listing jobs plus reading job details, scaling, and status from GET endpoints
+
+### Changed
+
+- chore(deps): Update `verdacloud-sdk-go` from v1.2.2 to v1.3.0
+- chore(go): Raise the provider Go requirement to 1.25 to match the Verda Go SDK
+
+### Fixed
+
+- fix(serverless-jobs): Support in-place serverless job updates through the SDK PATCH endpoint
+
 ## [v1.1.2] - 2026-02-26
 
 ### Added

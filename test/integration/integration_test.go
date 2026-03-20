@@ -398,6 +398,18 @@ func TestServerlessJobResource(t *testing.T) {
 	if !strings.Contains(output, "job_endpoint_base_url") {
 		t.Error("Expected job_endpoint_base_url in output")
 	}
+	if !strings.Contains(output, "job_data_source_name") {
+		t.Error("Expected job_data_source_name in output")
+	}
+	if !strings.Contains(output, "job_data_source_scaling_max_replica_count") {
+		t.Error("Expected job_data_source_scaling_max_replica_count in output")
+	}
+	if !strings.Contains(output, "job_data_source_status") {
+		t.Error("Expected job_data_source_status in output")
+	}
+	if !strings.Contains(output, "job_data_source_list_contains_job") {
+		t.Error("Expected job_data_source_list_contains_job in output")
+	}
 
 	t.Log("Serverless Job resource test passed")
 }

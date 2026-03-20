@@ -117,3 +117,12 @@ The Verda provider includes the following resources:
 - [verda_container](resources/container.md) - Serverless container deployments with auto-scaling
 - [verda_serverless_job](resources/serverless_job.md) - Batch job deployments
 - [verda_container_registry_credentials](resources/container_registry_credentials.md) - Private registry authentication
+
+## Data Sources
+
+The Verda provider includes the following data sources:
+
+- [verda_serverless_job](data-sources/serverless_job.md) - Read a serverless job deployment by name
+- [verda_serverless_jobs](data-sources/serverless_jobs.md) - List serverless job deployments
+- [verda_serverless_job_scaling](data-sources/serverless_job_scaling.md) - Read serverless job scaling configuration
+- [verda_serverless_job_status](data-sources/serverless_job_status.md) - Read serverless job runtime status

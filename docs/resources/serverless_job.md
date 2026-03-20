@@ -7,7 +7,7 @@ description: |-
 
 # verda_serverless_job (Resource)
 
-Manages serverless GPU job deployments for batch processing workloads. Unlike container deployments, serverless jobs are optimized for tasks that run to completion, such as training jobs, data processing, or batch inference.
+Manages serverless GPU job deployments for batch processing workloads. Unlike container deployments, serverless jobs are optimized for tasks that run to completion, such as training jobs, data processing, or batch inference. The provider uses the Verda PATCH endpoint for in-place updates when the deployment configuration changes.
 
 ## Example Usage
 
