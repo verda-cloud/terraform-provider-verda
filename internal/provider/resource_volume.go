@@ -26,14 +26,15 @@ type VolumeResource struct {
 }
 
 type VolumeResourceModel struct {
-	ID         types.String `tfsdk:"id"`
-	Name       types.String `tfsdk:"name"`
-	Size       types.Int64  `tfsdk:"size"`
-	Type       types.String `tfsdk:"type"`
-	Location   types.String `tfsdk:"location"`
-	Status     types.String `tfsdk:"status"`
-	InstanceID types.String `tfsdk:"instance_id"`
-	CreatedAt  types.String `tfsdk:"created_at"`
+	ID                types.String `tfsdk:"id"`
+	Name              types.String `tfsdk:"name"`
+	Size              types.Int64  `tfsdk:"size"`
+	Type              types.String `tfsdk:"type"`
+	Location          types.String `tfsdk:"location"`
+	OnSpotDiscontinue types.String `tfsdk:"on_spot_discontinue"`
+	Status            types.String `tfsdk:"status"`
+	InstanceID        types.String `tfsdk:"instance_id"`
+	CreatedAt         types.String `tfsdk:"created_at"`
 }
 
 func (r *VolumeResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -80,6 +81,13 @@ func (r *VolumeResource) Schema(ctx context.Context, req resource.SchemaRequest,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"on_spot_discontinue": schema.StringAttribute{
+				MarkdownDescription: "Action to take on spot instance discontinuation: 'keep_detached', 'move_to_trash', or 'delete_permanently'",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"status": schema.StringAttribute{
@@ -131,6 +139,9 @@ func (r *VolumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		Size:         int(data.Size.ValueInt64()),
 		Type:         data.Type.ValueString(),
 		LocationCode: data.Location.ValueString(),
+	}
+	if !data.OnSpotDiscontinue.IsNull() && data.OnSpotDiscontinue.ValueString() != "" {
+		createReq.OnSpotDiscontinue = data.OnSpotDiscontinue.ValueString()
 	}
 
 	volumeID, err := r.client.Volumes.CreateVolume(ctx, createReq)
