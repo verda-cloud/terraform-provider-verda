@@ -1,0 +1,102 @@
+name: Integration Tests
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: integration-tests-pr-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  integration-test:
+    name: Integration Test
+    if: >
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/run-e2e' &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERDA_CLIENT_ID: ${{ secrets.VERDA_CLIENT_ID }}
+      VERDA_CLIENT_SECRET: ${{ secrets.VERDA_CLIENT_SECRET }}
+      VERDA_BASE_URL: ${{ secrets.VERDA_BASE_URL }}
+    steps:
+      - name: Acknowledge command
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: "Running integration tests for this PR."
+            })
+
+      - name: Load PR metadata
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("head_ref", pr.head.ref);
+            core.setOutput("head_repo", pr.head.repo.full_name);
+
+      - name: Check out PR head
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.3"
+          cache: true
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Run integration tests
+        run: make test-integration
+
+      - name: Report success
+        if: success()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Integration tests passed for \`${{ steps.pr.outputs.head_sha }}\`.`
+            })
+
+      - name: Report failure
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Integration tests failed for \`${{ steps.pr.outputs.head_sha }}\`. Check the workflow run for details.`
+            })
