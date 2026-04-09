@@ -6,7 +6,7 @@
 #   make install       - Install provider locally for testing
 #   make test          - Run unit tests
 #   make test-integration - Run integration tests
-#   make pre-commit    - Run all pre-commit checks (linting, security, formatting)
+#   make pre-commit    - Run all configured pre-commit hooks
 #   make lint          - Run Go linting
 #   make security      - Run security scan (gitleaks + gosec)
 #   make fmt           - Format Go and Terraform code
@@ -46,7 +46,7 @@ help:
 	@echo "  make test-integration Run integration tests (requires .env with credentials)"
 	@echo ""
 	@echo "$(GREEN)Code Quality:$(RESET)"
-	@echo "  make pre-commit      Run ALL pre-commit checks (recommended before commit)"
+	@echo "  make pre-commit      Run all configured pre-commit hooks"
 	@echo "  make lint            Run Go linting (golangci-lint)"
 	@echo "  make security        Run security scans (gitleaks + gosec)"
 	@echo "  make fmt             Format Go and Terraform code"
@@ -88,29 +88,11 @@ test-integration:
 		./scripts/run-integration-tests.sh; \
 	fi
 
-# Run ALL pre-commit checks (linting, security, formatting)
+# Run all configured pre-commit hooks
 pre-commit:
-	@echo "$(CYAN)Running pre-commit checks...$(RESET)"
-	@echo ""
-	@echo "$(YELLOW)1. Checking for secrets (gitleaks)...$(RESET)"
-	@gitleaks detect --source . --config .gitleaks.toml --verbose && echo "$(GREEN)   No secrets found$(RESET)" || (echo "$(RED)   SECRETS DETECTED! Fix before committing$(RESET)" && exit 1)
-	@echo ""
-	@echo "$(YELLOW)2. Checking Go formatting (gofmt)...$(RESET)"
-	@test -z "$$($(GOFMT) -l .)" && echo "$(GREEN)   Go code is formatted$(RESET)" || (echo "$(YELLOW)   Some Go files need formatting. Run: make fmt$(RESET)" && $(GOFMT) -l .)
-	@echo ""
-	@echo "$(YELLOW)3. Running Go vet...$(RESET)"
-	@$(GO) vet ./... && echo "$(GREEN)   Go vet passed$(RESET)"
-	@echo ""
-	@echo "$(YELLOW)4. Running golangci-lint...$(RESET)"
-	@golangci-lint run --timeout=5m && echo "$(GREEN)   Linting passed$(RESET)" || (echo "$(RED)   Linting failed$(RESET)" && exit 1)
-	@echo ""
-	@echo "$(YELLOW)5. Running security scan (gosec)...$(RESET)"
-	@gosec -exclude-dir=test ./... 2>/dev/null && echo "$(GREEN)   Security scan passed$(RESET)" || echo "$(YELLOW)   Security warnings (review if any)$(RESET)"
-	@echo ""
-	@echo "$(YELLOW)6. Checking Terraform formatting...$(RESET)"
-	@terraform fmt -check -recursive examples/ test/ 2>/dev/null && echo "$(GREEN)   Terraform code is formatted$(RESET)" || echo "$(YELLOW)   Terraform code needs formatting. Run: make fmt$(RESET)"
-	@echo ""
-	@echo "$(GREEN)All pre-commit checks completed!$(RESET)"
+	@echo "$(CYAN)Running pre-commit hooks...$(RESET)"
+	@command -v pre-commit >/dev/null 2>&1 || (echo "$(RED)pre-commit is not installed. Install it with pipx/pip/brew and rerun.$(RESET)" && exit 1)
+	pre-commit run --all-files
 
 # Run Go linting only
 lint:

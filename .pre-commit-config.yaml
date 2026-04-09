@@ -4,6 +4,7 @@ repos:
     rev: v8.30.0
     hooks:
       - id: gitleaks
+        args: [--config=.gitleaks.toml]
 
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -26,12 +27,26 @@ repos:
       - id: go-imports
       - id: go-mod-tidy
 
-  # Golangci-lint - comprehensive Go linting
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v2.8.0
+  - repo: local
     hooks:
+      - id: gosec
+        name: Security scan (gosec)
+        entry: gosec -exclude-dir=test ./...
+        language: system
+        types: [go]
+        pass_filenames: false
       - id: golangci-lint
-        args: [--timeout=5m]
+        name: Lint Go code (golangci-lint)
+        entry: make lint
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: go-tests
+        name: Run Go tests
+        entry: make test
+        language: system
+        types: [go]
+        pass_filenames: false
 
   # Terraform formatting (for test files and examples)
   - repo: https://github.com/antonbabenko/pre-commit-terraform
