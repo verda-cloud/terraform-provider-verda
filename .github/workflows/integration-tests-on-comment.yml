@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   issues: write
+  members: read
   pull-requests: read
 
 concurrency:
@@ -14,16 +15,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  integration-test:
-    name: Integration Test
+  authorize:
+    name: Authorize
     if: >
       github.event.issue.pull_request &&
-      github.event.comment.body == '/run-e2e' &&
-      (
-        github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'COLLABORATOR'
-      )
+      github.event.comment.body == '/run-e2e'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check team membership
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              await github.rest.teams.getMembershipForUserInOrg({
+                org: 'verda-cloud',
+                team_slug: 'opensource-devs',
+                username: context.payload.comment.user.login,
+              });
+            } catch (e) {
+              core.setFailed(`User ${context.payload.comment.user.login} is not a member of opensource-devs`);
+            }
+
+  integration-test:
+    name: Integration Test
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
