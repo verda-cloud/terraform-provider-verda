@@ -35,17 +35,17 @@ resource "verda_instance" "spot_with_volumes" {
 
   # OS volume: keep detached when spot is discontinued
   os_volume {
-    name              = "os-vol"
-    size              = 55
-    type              = "NVMe"
+    name                = "os-vol"
+    size                = 55
+    type                = "NVMe"
     on_spot_discontinue = "keep_detached" # Valid: "keep_detached", "move_to_trash", "delete_permanently"
   }
 
   # Data volume: move to trash when spot is discontinued
   volumes {
-    name              = "data-vol"
-    size              = 500
-    type              = "NVMe"
+    name                = "data-vol"
+    size                = 500
+    type                = "NVMe"
     on_spot_discontinue = "move_to_trash" # Valid: "keep_detached", "move_to_trash", "delete_permanently"
   }
 }
