@@ -77,16 +77,18 @@ type StorageModel struct {
 }
 
 type VolumeCreateModel struct {
-	Name     types.String `tfsdk:"name"`
-	Size     types.Int64  `tfsdk:"size"`
-	Type     types.String `tfsdk:"type"`
-	Location types.String `tfsdk:"location"`
+	Name              types.String `tfsdk:"name"`
+	Size              types.Int64  `tfsdk:"size"`
+	Type              types.String `tfsdk:"type"`
+	Location          types.String `tfsdk:"location"`
+	OnSpotDiscontinue types.String `tfsdk:"on_spot_discontinue"`
 }
 
 type OSVolumeCreateModel struct {
-	Name types.String `tfsdk:"name"`
-	Size types.Int64  `tfsdk:"size"`
-	Type types.String `tfsdk:"type"`
+	Name              types.String `tfsdk:"name"`
+	Size              types.Int64  `tfsdk:"size"`
+	Type              types.String `tfsdk:"type"`
+	OnSpotDiscontinue types.String `tfsdk:"on_spot_discontinue"`
 }
 
 func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -298,6 +300,10 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 						"location": schema.StringAttribute{
 							Optional: true,
 						},
+						"on_spot_discontinue": schema.StringAttribute{
+							MarkdownDescription: "Action to take on spot instance discontinuation: 'keep_detached', 'move_to_trash', or 'delete_permanently'",
+							Optional:            true,
+						},
 					},
 				},
 				PlanModifiers: []planmodifier.List{
@@ -324,6 +330,10 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 					"type": schema.StringAttribute{
 						Required: true,
+					},
+					"on_spot_discontinue": schema.StringAttribute{
+						MarkdownDescription: "Action to take on spot instance discontinuation: 'keep_detached', 'move_to_trash', or 'delete_permanently'",
+						Optional:            true,
 					},
 				},
 				PlanModifiers: []planmodifier.Object{
@@ -402,12 +412,16 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 		var volumeReqs []verda.VolumeCreateRequest
 		for _, vol := range volumes {
-			volumeReqs = append(volumeReqs, verda.VolumeCreateRequest{
+			volReq := verda.VolumeCreateRequest{
 				Name:         vol.Name.ValueString(),
 				Size:         int(vol.Size.ValueInt64()),
 				Type:         vol.Type.ValueString(),
 				LocationCode: vol.Location.ValueString(),
-			})
+			}
+			if !vol.OnSpotDiscontinue.IsNull() && vol.OnSpotDiscontinue.ValueString() != "" {
+				volReq.OnSpotDiscontinue = vol.OnSpotDiscontinue.ValueString()
+			}
+			volumeReqs = append(volumeReqs, volReq)
 		}
 		createReq.Volumes = volumeReqs
 	}
@@ -428,10 +442,14 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 			return
 		}
 
-		createReq.OSVolume = &verda.OSVolumeCreateRequest{
+		osVolumeReq := &verda.OSVolumeCreateRequest{
 			Name: osVolume.Name.ValueString(),
 			Size: int(osVolume.Size.ValueInt64()),
 		}
+		if !osVolume.OnSpotDiscontinue.IsNull() && osVolume.OnSpotDiscontinue.ValueString() != "" {
+			osVolumeReq.OnSpotDiscontinue = osVolume.OnSpotDiscontinue.ValueString()
+		}
+		createReq.OSVolume = osVolumeReq
 	}
 
 	instance, err := r.client.Instances.Create(ctx, createReq)
@@ -504,7 +522,7 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	err := r.client.Instances.Delete(ctx, []string{}, data.ID.ValueString())
+	err := r.client.Instances.Delete(ctx, []string{data.ID.ValueString()}, []string{}, false)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete instance, got error: %s", err))
 		return

@@ -4,11 +4,12 @@ go 1.25.4
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
-	github.com/verda-cloud/verdacloud-sdk-go v1.2.2
+	github.com/verda-cloud/verdacloud-sdk-go v1.4.0
 )
 
 require (
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.7.0 // indirect

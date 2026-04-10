@@ -489,10 +489,172 @@ func (r *ServerlessJobResource) Update(ctx context.Context, req resource.UpdateR
 		return
 	}
 
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"Serverless job deployments cannot be updated. Please delete and recreate the resource with new values.",
-	)
+	updateReq := &verda.UpdateJobDeploymentRequest{}
+
+	// Parse compute
+	var compute ComputeModel
+	resp.Diagnostics.Append(data.Compute.As(ctx, &compute, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	updateReq.Compute = &verda.ContainerCompute{
+		Name: compute.Name.ValueString(),
+		Size: int(compute.Size.ValueInt64()),
+	}
+
+	// Parse scaling
+	var scaling JobScalingModel
+	resp.Diagnostics.Append(data.Scaling.As(ctx, &scaling, basetypes.ObjectAsOptions{})...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	updateReq.Scaling = &verda.JobScalingOptions{
+		MaxReplicaCount:        int(scaling.MaxReplicaCount.ValueInt64()),
+		QueueMessageTTLSeconds: int(scaling.QueueMessageTTLSeconds.ValueInt64()),
+		DeadlineSeconds:        int(scaling.DeadlineSeconds.ValueInt64()),
+	}
+
+	// Parse container registry settings if provided
+	if !data.ContainerRegistrySettings.IsNull() && !data.ContainerRegistrySettings.IsUnknown() {
+		var registrySettings RegistrySettingsModel
+		resp.Diagnostics.Append(data.ContainerRegistrySettings.As(ctx, &registrySettings, basetypes.ObjectAsOptions{})...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		isPrivate := registrySettings.IsPrivate.ValueString() == "true"
+		updateReq.ContainerRegistrySettings = &verda.ContainerRegistrySettings{
+			IsPrivate: isPrivate,
+		}
+
+		if !registrySettings.Credentials.IsNull() && registrySettings.Credentials.ValueString() != "" {
+			updateReq.ContainerRegistrySettings.Credentials = &verda.RegistryCredentialsRef{
+				Name: registrySettings.Credentials.ValueString(),
+			}
+		}
+	}
+
+	// Parse containers
+	var containers []ContainerModel
+	resp.Diagnostics.Append(data.Containers.ElementsAs(ctx, &containers, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	var deploymentContainers []verda.CreateDeploymentContainer
+	for _, container := range containers {
+		deploymentContainer := verda.CreateDeploymentContainer{
+			Image:       container.Image.ValueString(),
+			ExposedPort: int(container.ExposedPort.ValueInt64()),
+		}
+
+		if !container.Healthcheck.IsNull() {
+			var healthcheck HealthcheckModel
+			resp.Diagnostics.Append(container.Healthcheck.As(ctx, &healthcheck, basetypes.ObjectAsOptions{})...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			enabled := healthcheck.Enabled.ValueString() == "true"
+			hc := &verda.ContainerHealthcheck{Enabled: enabled}
+			if !healthcheck.Port.IsNull() && healthcheck.Port.ValueString() != "" {
+				var port int
+				_, scanErr := fmt.Sscanf(healthcheck.Port.ValueString(), "%d", &port)
+				if scanErr == nil {
+					hc.Port = port
+				}
+			}
+			if !healthcheck.Path.IsNull() {
+				hc.Path = healthcheck.Path.ValueString()
+			}
+			deploymentContainer.Healthcheck = hc
+		}
+
+		if !container.EntrypointOverrides.IsNull() && !container.EntrypointOverrides.IsUnknown() {
+			var entrypointOverrides EntrypointOverridesModel
+			resp.Diagnostics.Append(container.EntrypointOverrides.As(ctx, &entrypointOverrides, basetypes.ObjectAsOptions{})...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+
+			overrides := &verda.ContainerEntrypointOverrides{Enabled: entrypointOverrides.Enabled.ValueBool()}
+			if !entrypointOverrides.Entrypoint.IsNull() && !entrypointOverrides.Entrypoint.IsUnknown() {
+				var entrypoint []string
+				resp.Diagnostics.Append(entrypointOverrides.Entrypoint.ElementsAs(ctx, &entrypoint, false)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				overrides.Entrypoint = entrypoint
+			}
+			if !entrypointOverrides.Cmd.IsNull() && !entrypointOverrides.Cmd.IsUnknown() {
+				var cmd []string
+				resp.Diagnostics.Append(entrypointOverrides.Cmd.ElementsAs(ctx, &cmd, false)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+				overrides.Cmd = cmd
+			}
+			deploymentContainer.EntrypointOverrides = overrides
+		}
+
+		if !container.Env.IsNull() {
+			var envVars []EnvVarModel
+			resp.Diagnostics.Append(container.Env.ElementsAs(ctx, &envVars, false)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			var containerEnvVars []verda.ContainerEnvVar
+			for _, envVar := range envVars {
+				containerEnvVars = append(containerEnvVars, verda.ContainerEnvVar{
+					Type:                     envVar.Type.ValueString(),
+					Name:                     envVar.Name.ValueString(),
+					ValueOrReferenceToSecret: envVar.ValueOrReferenceToSecret.ValueString(),
+				})
+			}
+			deploymentContainer.Env = containerEnvVars
+		}
+
+		if !container.VolumeMounts.IsNull() {
+			var volumeMounts []VolumeMountModel
+			resp.Diagnostics.Append(container.VolumeMounts.ElementsAs(ctx, &volumeMounts, false)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+			var containerVolumeMounts []verda.ContainerVolumeMount
+			for _, volumeMount := range volumeMounts {
+				mount := verda.ContainerVolumeMount{
+					Type:      volumeMount.Type.ValueString(),
+					MountPath: volumeMount.MountPath.ValueString(),
+				}
+				if !volumeMount.SecretName.IsNull() && volumeMount.SecretName.ValueString() != "" {
+					mount.SecretName = volumeMount.SecretName.ValueString()
+				}
+				if !volumeMount.SizeInMB.IsNull() {
+					mount.SizeInMB = int(volumeMount.SizeInMB.ValueInt64())
+				}
+				if !volumeMount.VolumeID.IsNull() && volumeMount.VolumeID.ValueString() != "" {
+					mount.VolumeID = volumeMount.VolumeID.ValueString()
+				}
+				containerVolumeMounts = append(containerVolumeMounts, mount)
+			}
+			deploymentContainer.VolumeMounts = containerVolumeMounts
+		}
+
+		deploymentContainers = append(deploymentContainers, deploymentContainer)
+	}
+	updateReq.Containers = deploymentContainers
+
+	deployment, err := r.client.ServerlessJobs.UpdateJobDeployment(ctx, data.Name.ValueString(), updateReq)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update serverless job deployment, got error: %s", err))
+		return
+	}
+
+	planContainers := data.Containers
+	r.flattenJobDeploymentToModel(ctx, deployment, &data, &resp.Diagnostics)
+	r.mergeJobContainersFromPlan(ctx, planContainers, &data, &resp.Diagnostics)
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *ServerlessJobResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

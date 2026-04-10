@@ -6,6 +6,10 @@ resource "verda_volume" "test" {
   size     = 100 # GB
   type     = "NVMe"
   location = "FIN-01"
+
+  # Optional: action on spot instance discontinuation
+  # Valid values: "keep_detached", "move_to_trash", "delete_permanently"
+  on_spot_discontinue = "keep_detached"
 }
 
 # Output volume information for verification
