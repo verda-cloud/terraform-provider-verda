@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   issues: write
-  members: read
   pull-requests: read
 
 concurrency:
@@ -22,19 +21,21 @@ jobs:
       github.event.comment.body == '/run-e2e'
     runs-on: ubuntu-latest
     steps:
-      - name: Check team membership
-        uses: actions/github-script@v8
-        with:
-          script: |
-            try {
-              await github.rest.teams.getMembershipForUserInOrg({
-                org: 'verda-cloud',
-                team_slug: 'opensource-devs',
-                username: context.payload.comment.user.login,
-              });
-            } catch (e) {
-              core.setFailed(`User ${context.payload.comment.user.login} is not a member of opensource-devs`);
-            }
+      - name: Check allowed users
+        env:
+          ALLOWED_USERS: ${{ vars.E2E_ALLOWED_USERS }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+        run: |
+          IFS=',' read -ra users <<< "$ALLOWED_USERS"
+          for user in "${users[@]}"; do
+            trimmed="$(echo "$user" | xargs)"
+            if [ "$trimmed" = "$COMMENT_USER" ]; then
+              echo "User $COMMENT_USER is authorized"
+              exit 0
+            fi
+          done
+          echo "User $COMMENT_USER is not authorized to run E2E tests"
+          exit 1
 
   integration-test:
     name: Integration Test
