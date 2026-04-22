@@ -10,10 +10,12 @@
 #   make lint          - Run Go linting
 #   make security      - Run security scan (gitleaks + gosec)
 #   make fmt           - Format Go and Terraform code
+#   make license       - Add Apache 2.0 headers to Go files (google/addlicense)
+#   make license-check - Verify Go files have license headers (CI)
 #   make clean         - Clean build artifacts
 #
 
-.PHONY: help build install test test-integration pre-commit lint security fmt clean clean-test release
+.PHONY: help build install test test-integration pre-commit lint security fmt license license-check clean clean-test release
 
 # Default target
 .DEFAULT_GOAL := help
@@ -50,6 +52,8 @@ help:
 	@echo "  make lint            Run Go linting (golangci-lint)"
 	@echo "  make security        Run security scans (gitleaks + gosec)"
 	@echo "  make fmt             Format Go and Terraform code"
+	@echo "  make license         Add Apache 2.0 headers to *.go (excludes vendor/)"
+	@echo "  make license-check   Fail if any *.go is missing a license header"
 	@echo ""
 	@echo "$(GREEN)Maintenance:$(RESET)"
 	@echo "  make clean           Clean build artifacts"
@@ -118,6 +122,17 @@ fmt:
 	@echo "$(YELLOW)Formatting Terraform code...$(RESET)"
 	terraform fmt -recursive examples/ test/ 2>/dev/null || true
 	@echo "$(GREEN)Formatting complete$(RESET)"
+
+# Add Apache 2.0 file headers to Go sources only (does not touch YAML/shell/etc.)
+license:
+	@echo "$(CYAN)Adding license headers to Go files...$(RESET)"
+	find . -name '*.go' -not -path './vendor/*' -print0 | xargs -0 $(GO) run github.com/google/addlicense@v1.2.0 -c "Verda Cloud Oy" -l apache -y 2026 -v
+	@echo "$(GREEN)License headers updated$(RESET)"
+
+license-check:
+	@echo "$(CYAN)Checking license headers on Go files...$(RESET)"
+	find . -name '*.go' -not -path './vendor/*' -print0 | xargs -0 $(GO) run github.com/google/addlicense@v1.2.0 -c "Verda Cloud Oy" -l apache -y 2026 -check
+	@echo "$(GREEN)All Go files have license headers$(RESET)"
 
 # Download dependencies
 deps:
