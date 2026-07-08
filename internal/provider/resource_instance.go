@@ -386,6 +386,8 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
+	plannedImage := data.Image
+
 	createReq := verda.CreateInstanceRequest{
 		InstanceType: data.InstanceType.ValueString(),
 		Image:        data.Image.ValueString(),
@@ -482,6 +484,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 	// Now populate the rest of the instance data
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
+	preserveKnownImage(plannedImage, &data)
 
 	// Update state with full instance details (even if there were non-critical errors)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -496,6 +499,8 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
+	priorImage := data.Image
+
 	instance, err := r.client.Instances.GetByID(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read instance, got error: %s", err))
@@ -503,6 +508,7 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	}
 
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
+	preserveKnownImage(priorImage, &data)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -646,6 +652,14 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 	)
 	diagnostics.Append(storDiags...)
 	data.Storage = storageObj
+}
+
+func preserveKnownImage(image types.String, data *InstanceResourceModel) {
+	if image.IsNull() || image.IsUnknown() {
+		return
+	}
+
+	data.Image = image
 }
 
 // setRequiresReplaceModifier is a plan modifier for types.Set that requires
