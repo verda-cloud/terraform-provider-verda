@@ -386,6 +386,8 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
+	plannedSSHKeyIDs := data.SSHKeyIDs
+
 	createReq := verda.CreateInstanceRequest{
 		InstanceType: data.InstanceType.ValueString(),
 		Image:        data.Image.ValueString(),
@@ -395,26 +397,22 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		IsSpot:       data.IsSpot.ValueBool(),
 	}
 
-	if !data.Contract.IsNull() {
+	if !data.Contract.IsNull() && !data.Contract.IsUnknown() {
 		createReq.Contract = data.Contract.ValueString()
 	}
 
-	if !data.Pricing.IsNull() {
+	if !data.Pricing.IsNull() && !data.Pricing.IsUnknown() {
 		createReq.Pricing = data.Pricing.ValueString()
 	}
 
-	if !data.StartupScriptID.IsNull() {
+	if !data.StartupScriptID.IsNull() && !data.StartupScriptID.IsUnknown() {
 		scriptID := data.StartupScriptID.ValueString()
 		createReq.StartupScriptID = &scriptID
 	}
 
-	if !data.SSHKeyIDs.IsNull() {
-		var sshKeyIDs []string
-		resp.Diagnostics.Append(data.SSHKeyIDs.ElementsAs(ctx, &sshKeyIDs, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		createReq.SSHKeyIDs = sshKeyIDs
+	setCreateRequestSSHKeyIDs(ctx, data.SSHKeyIDs, &createReq, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	if !data.Volumes.IsNull() {
@@ -482,6 +480,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 	// Now populate the rest of the instance data
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
+	preserveKnownSSHKeyIDs(plannedSSHKeyIDs, &data)
 
 	// Update state with full instance details (even if there were non-critical errors)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -496,6 +495,8 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
+	priorSSHKeyIDs := data.SSHKeyIDs
+
 	instance, err := r.client.Instances.GetByID(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read instance, got error: %s", err))
@@ -503,6 +504,7 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	}
 
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
+	preserveKnownSSHKeyIDs(priorSSHKeyIDs, &data)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -646,6 +648,28 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 	)
 	diagnostics.Append(storDiags...)
 	data.Storage = storageObj
+}
+
+func setCreateRequestSSHKeyIDs(ctx context.Context, sshKeyIDs types.Set, createReq *verda.CreateInstanceRequest, diagnostics *diag.Diagnostics) {
+	if sshKeyIDs.IsNull() || sshKeyIDs.IsUnknown() {
+		return
+	}
+
+	ids := []string{}
+	diagnostics.Append(sshKeyIDs.ElementsAs(ctx, &ids, false)...)
+	if diagnostics.HasError() {
+		return
+	}
+
+	createReq.SSHKeyIDs = ids
+}
+
+func preserveKnownSSHKeyIDs(sshKeyIDs types.Set, data *InstanceResourceModel) {
+	if sshKeyIDs.IsNull() || sshKeyIDs.IsUnknown() {
+		return
+	}
+
+	data.SSHKeyIDs = sshKeyIDs
 }
 
 // setRequiresReplaceModifier is a plan modifier for types.Set that requires
