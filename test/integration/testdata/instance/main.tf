@@ -20,7 +20,7 @@ resource "verda_instance" "test" {
   ssh_key_ids = [verda_ssh_key.test.id]
 
   # Optional: OS volume with spot discontinuation policy
-  os_volume {
+  os_volume = {
     name                = "test-os-vol"
     size                = 55
     type                = "NVMe"
@@ -28,12 +28,12 @@ resource "verda_instance" "test" {
   }
 
   # Optional: Additional volumes with spot discontinuation policy
-  volumes {
+  volumes = [{
     name                = "test-data-vol"
     size                = 100
     type                = "NVMe"
     on_spot_discontinue = "move_to_trash"
-  }
+  }]
 }
 
 # Output instance information for verification

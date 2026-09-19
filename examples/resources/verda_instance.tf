@@ -42,12 +42,12 @@ resource "verda_instance" "spot_with_volumes" {
   }
 
   # Data volume: move to trash when spot is discontinued
-  volumes {
+  volumes = [{
     name                = "data-vol"
     size                = 500
     type                = "NVMe"
     on_spot_discontinue = "move_to_trash" # Valid: "keep_detached", "move_to_trash", "delete_permanently"
-  }
+  }]
 }
 
 # Output instance information
