@@ -362,6 +362,18 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			"os_volume": schema.SingleNestedAttribute{
 				MarkdownDescription: "OS volume configuration",
 				Optional:            true,
+				// Nested plan modifiers do not run for a null plan, so adding
+				// or removing the whole object is caught here; name, size and
+				// type below cover changes within it.
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.RequiresReplaceIf(
+						func(ctx context.Context, req planmodifier.ObjectRequest, resp *objectplanmodifier.RequiresReplaceIfFuncResponse) {
+							resp.RequiresReplace = req.PlanValue.IsNull() != req.StateValue.IsNull()
+						},
+						"Adding or removing os_volume requires replacing the instance.",
+						"Adding or removing os_volume requires replacing the instance.",
+					),
+				},
 				Attributes: map[string]schema.Attribute{
 					"name": schema.StringAttribute{
 						Required: true,
@@ -563,19 +575,73 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 }
 
 func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data InstanceResourceModel
+	var plan, state InstanceResourceModel
 
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Instances cannot be updated in the Verda API, only deleted and recreated
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"Instances cannot be updated for now. Most changes require replacing the resource.",
-	)
+	// os_volume.on_destroy is only read at Delete and never sent to the API,
+	// so changing it means recording the new value. Instances cannot be
+	// updated in the Verda API otherwise, only deleted and recreated.
+	onlyOnDestroy, diags := onlyOnDestroyChanged(ctx, plan, state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !onlyOnDestroy {
+		resp.Diagnostics.AddError(
+			"Update Not Supported",
+			"Instances cannot be updated for now. Most changes require replacing the resource.",
+		)
+		return
+	}
+
+	state.OSVolume = plan.OSVolume
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// onlyOnDestroyChanged reports whether plan and state differ in nothing but
+// os_volume.on_destroy. Computed attributes are skipped: the plan marks them
+// unknown on any update.
+func onlyOnDestroyChanged(ctx context.Context, plan, state InstanceResourceModel) (bool, diag.Diagnostics) {
+	configured := []struct{ plan, state attr.Value }{
+		{plan.InstanceType, state.InstanceType},
+		{plan.Image, state.Image},
+		{plan.Hostname, state.Hostname},
+		{plan.Description, state.Description},
+		{plan.SSHKeyIDs, state.SSHKeyIDs},
+		{plan.Location, state.Location},
+		{plan.IsSpot, state.IsSpot},
+		{plan.StartupScriptID, state.StartupScriptID},
+		{plan.Contract, state.Contract},
+		{plan.Pricing, state.Pricing},
+		{plan.Volumes, state.Volumes},
+		{plan.ExistingVolumes, state.ExistingVolumes},
+	}
+	for _, c := range configured {
+		if !c.plan.Equal(c.state) {
+			return false, nil
+		}
+	}
+
+	if plan.OSVolume.IsNull() || plan.OSVolume.IsUnknown() || state.OSVolume.IsNull() || state.OSVolume.IsUnknown() {
+		return plan.OSVolume.Equal(state.OSVolume), nil
+	}
+
+	var planVolume, stateVolume OSVolumeCreateModel
+	var diags diag.Diagnostics
+	diags.Append(plan.OSVolume.As(ctx, &planVolume, basetypes.ObjectAsOptions{})...)
+	diags.Append(state.OSVolume.As(ctx, &stateVolume, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return false, diags
+	}
+	stateVolume.OnDestroy = planVolume.OnDestroy
+
+	return planVolume == stateVolume, nil
 }
 
 func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

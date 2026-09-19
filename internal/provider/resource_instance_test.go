@@ -162,3 +162,99 @@ func TestDeleteVolumePolicy(t *testing.T) {
 		}
 	}
 }
+
+var osVolumeAttrTypes = map[string]attr.Type{
+	"name":                types.StringType,
+	"size":                types.Int64Type,
+	"type":                types.StringType,
+	"on_spot_discontinue": types.StringType,
+	"on_destroy":          types.StringType,
+}
+
+func osVolumeObject(t *testing.T, name string, size int64, onDestroy string) types.Object {
+	t.Helper()
+
+	object, diags := types.ObjectValueFrom(context.Background(), osVolumeAttrTypes, OSVolumeCreateModel{
+		Name:              types.StringValue(name),
+		Size:              types.Int64Value(size),
+		Type:              types.StringValue("NVMe"),
+		OnSpotDiscontinue: types.StringNull(),
+		OnDestroy:         types.StringValue(onDestroy),
+	})
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+
+	return object
+}
+
+func TestOnlyOnDestroyChanged(t *testing.T) {
+	base := func() InstanceResourceModel {
+		return InstanceResourceModel{
+			InstanceType:    types.StringValue("CPU.8V.32G"),
+			Hostname:        types.StringValue("example"),
+			IsSpot:          types.BoolValue(false),
+			SSHKeyIDs:       types.SetValueMust(types.StringType, []attr.Value{types.StringValue("key-1")}),
+			Volumes:         types.ListNull(types.ObjectType{AttrTypes: map[string]attr.Type{"name": types.StringType}}),
+			ExistingVolumes: types.ListNull(types.StringType),
+			OSVolume:        osVolumeObject(t, "example-os", 100, osVolumeDeletePermanently),
+			// Computed attributes are unknown in an update plan and must not
+			// count as a change.
+			Status: types.StringUnknown(),
+		}
+	}
+
+	cases := []struct {
+		description string
+		mutate      func(plan *InstanceResourceModel)
+		want        bool
+	}{
+		{
+			"on_destroy change is the only difference",
+			func(plan *InstanceResourceModel) {
+				plan.OSVolume = osVolumeObject(t, "example-os", 100, osVolumeKeepDetached)
+			},
+			true,
+		},
+		{
+			"no change at all",
+			func(plan *InstanceResourceModel) {},
+			true,
+		},
+		{
+			"os_volume size changed alongside on_destroy",
+			func(plan *InstanceResourceModel) {
+				plan.OSVolume = osVolumeObject(t, "example-os", 200, osVolumeKeepDetached)
+			},
+			false,
+		},
+		{
+			"os_volume removed",
+			func(plan *InstanceResourceModel) {
+				plan.OSVolume = types.ObjectNull(osVolumeAttrTypes)
+			},
+			false,
+		},
+		{
+			"is_spot changed",
+			func(plan *InstanceResourceModel) {
+				plan.IsSpot = types.BoolValue(true)
+			},
+			false,
+		},
+	}
+	for _, c := range cases {
+		state := base()
+		plan := base()
+		plan.Status = types.StringValue("running")
+		c.mutate(&plan)
+
+		got, diags := onlyOnDestroyChanged(context.Background(), plan, state)
+		if diags.HasError() {
+			t.Fatalf("%s: unexpected diagnostics: %v", c.description, diags)
+		}
+		if got != c.want {
+			t.Errorf("%s: onlyOnDestroyChanged = %v, want %v", c.description, got, c.want)
+		}
+	}
+}
