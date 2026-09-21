@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(instances): `terraform destroy` deletes the instance's OS volume again. `Delete` sent `volume_ids: []`, which since verdacloud-sdk-go v1.4.0 means "delete no volume" and left every OS volume detached and billed (#17). New `os_volume.on_destroy`: `delete_permanently` (default), `move_to_trash`, `keep_detached`; changing it updates state in place without touching the API. Adding or removing the whole `os_volume` object still replaces the instance.
+- docs(instances): the `os_volume` and `volumes` examples and integration testdata use attribute syntax (`os_volume = { ... }`, `volumes = [{ ... }]`); block syntax fails validation.
+
 ## [v1.1.2] - 2026-02-26
 
 ### Added

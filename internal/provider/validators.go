@@ -151,3 +151,26 @@ func (v volumeMountValidator) ValidateObject(ctx context.Context, req validator.
 		)
 	}
 }
+
+// osVolumeOnDestroyValidator accepts the three OS volume policies.
+type osVolumeOnDestroyValidator struct{}
+
+func (v osVolumeOnDestroyValidator) Description(ctx context.Context) string {
+	return "on_destroy must be one of delete_permanently, move_to_trash, keep_detached"
+}
+
+func (v osVolumeOnDestroyValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v osVolumeOnDestroyValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	switch req.ConfigValue.ValueString() {
+	case osVolumeDeletePermanently, osVolumeMoveToTrash, osVolumeKeepDetached:
+		return
+	}
+	resp.Diagnostics.AddAttributeError(req.Path, "Invalid on_destroy",
+		fmt.Sprintf("%q is not one of %q, %q, %q", req.ConfigValue.ValueString(), osVolumeDeletePermanently, osVolumeMoveToTrash, osVolumeKeepDetached))
+}

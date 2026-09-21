@@ -154,6 +154,11 @@ Required:
 - `size` (Number) Size of the OS volume in GB.
 - `type` (String) Type of the OS volume (e.g., `NVMe`).
 
+Optional:
+
+- `on_destroy` (String) What happens to the OS volume when the instance is destroyed: `delete_permanently` (default), `move_to_trash`, or `keep_detached`. Can be changed in place; it is only read at destroy time.
+- `on_spot_discontinue` (String) Action to take on spot instance discontinuation: `keep_detached`, `move_to_trash`, or `delete_permanently`.
+
 <a id="nestedatt--volumes"></a>
 
 ### Nested Schema for `volumes`
