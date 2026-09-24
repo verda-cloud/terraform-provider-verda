@@ -41,6 +41,11 @@ resource "verda_instance" "spot_with_volumes" {
     on_spot_discontinue = "keep_detached" # Valid: "keep_detached", "move_to_trash", "delete_permanently"
   }
 
+  # Create returns once the instance is running with an address (default 20m).
+  timeouts = {
+    create = "30m"
+  }
+
   # Data volume: move to trash when spot is discontinued
   volumes = [{
     name                = "data-vol"

@@ -127,6 +127,7 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `pricing` (String) Pricing model for the instance.
 - `ssh_key_ids` (List of String) List of SSH key IDs to add to the instance.
 - `startup_script_id` (String) ID of the startup script to run on instance creation.
+- `timeouts` (Attributes) `create` (default `20m`): how long the create may take, from placing the order to the instance running with an address, before the apply fails. Changing it later updates state in place without touching the instance. A failed create leaves the instance in state as tainted, so the next apply replaces it; run `terraform untaint` on the resource to keep it. The API accepts the order before the instance exists; the resource returns once `ip` is known.
 - `volumes` (Attributes List) Volumes to create and attach to the instance. See [below for nested schema](#nestedatt--volumes).
 
 ### Read-Only

@@ -16,8 +16,11 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -47,31 +50,32 @@ type InstanceResource struct {
 }
 
 type InstanceResourceModel struct {
-	ID              types.String  `tfsdk:"id"`
-	InstanceType    types.String  `tfsdk:"instance_type"`
-	Image           types.String  `tfsdk:"image"`
-	Hostname        types.String  `tfsdk:"hostname"`
-	Description     types.String  `tfsdk:"description"`
-	PricePerHour    types.Float64 `tfsdk:"price_per_hour"`
-	IP              types.String  `tfsdk:"ip"`
-	Status          types.String  `tfsdk:"status"`
-	CreatedAt       types.String  `tfsdk:"created_at"`
-	SSHKeyIDs       types.Set     `tfsdk:"ssh_key_ids"`
-	Location        types.String  `tfsdk:"location"`
-	IsSpot          types.Bool    `tfsdk:"is_spot"`
-	OSName          types.String  `tfsdk:"os_name"`
-	StartupScriptID types.String  `tfsdk:"startup_script_id"`
-	OSVolumeID      types.String  `tfsdk:"os_volume_id"`
-	Contract        types.String  `tfsdk:"contract"`
-	Pricing         types.String  `tfsdk:"pricing"`
-	CPU             types.Object  `tfsdk:"cpu"`
-	GPU             types.Object  `tfsdk:"gpu"`
-	Memory          types.Object  `tfsdk:"memory"`
-	GPUMemory       types.Object  `tfsdk:"gpu_memory"`
-	Storage         types.Object  `tfsdk:"storage"`
-	Volumes         types.List    `tfsdk:"volumes"`
-	ExistingVolumes types.List    `tfsdk:"existing_volumes"`
-	OSVolume        types.Object  `tfsdk:"os_volume"`
+	ID              types.String   `tfsdk:"id"`
+	InstanceType    types.String   `tfsdk:"instance_type"`
+	Image           types.String   `tfsdk:"image"`
+	Hostname        types.String   `tfsdk:"hostname"`
+	Description     types.String   `tfsdk:"description"`
+	PricePerHour    types.Float64  `tfsdk:"price_per_hour"`
+	IP              types.String   `tfsdk:"ip"`
+	Status          types.String   `tfsdk:"status"`
+	CreatedAt       types.String   `tfsdk:"created_at"`
+	SSHKeyIDs       types.Set      `tfsdk:"ssh_key_ids"`
+	Location        types.String   `tfsdk:"location"`
+	IsSpot          types.Bool     `tfsdk:"is_spot"`
+	OSName          types.String   `tfsdk:"os_name"`
+	StartupScriptID types.String   `tfsdk:"startup_script_id"`
+	OSVolumeID      types.String   `tfsdk:"os_volume_id"`
+	Contract        types.String   `tfsdk:"contract"`
+	Pricing         types.String   `tfsdk:"pricing"`
+	CPU             types.Object   `tfsdk:"cpu"`
+	GPU             types.Object   `tfsdk:"gpu"`
+	Memory          types.Object   `tfsdk:"memory"`
+	GPUMemory       types.Object   `tfsdk:"gpu_memory"`
+	Storage         types.Object   `tfsdk:"storage"`
+	Volumes         types.List     `tfsdk:"volumes"`
+	ExistingVolumes types.List     `tfsdk:"existing_volumes"`
+	OSVolume        types.Object   `tfsdk:"os_volume"`
+	Timeouts        timeouts.Value `tfsdk:"timeouts"`
 }
 
 type CPUModel struct {
@@ -411,6 +415,11 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 				},
 			},
+			// Create waits until the instance is running with an address
+			// (default 20m); the API answers the order before the instance exists.
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+			}),
 		},
 	}
 }
@@ -445,6 +454,14 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 	plannedSSHKeyIDs := data.SSHKeyIDs
 	plannedImage := data.Image
+
+	createTimeout, diags := data.Timeouts.Create(ctx, defaultCreateTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	createCtx, cancel := context.WithTimeout(ctx, createTimeout)
+	defer cancel()
 
 	createReq := verda.CreateInstanceRequest{
 		InstanceType: data.InstanceType.ValueString(),
@@ -522,7 +539,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		createReq.OSVolume = osVolumeReq
 	}
 
-	instance, err := r.client.Instances.Create(ctx, createReq)
+	instance, err := r.client.Instances.Create(createCtx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create instance, got error: %s", err))
 		return
@@ -533,6 +550,16 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	data.ID = types.StringValue(instance.ID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// The API accepts the order before the instance exists: status
+	// "provisioning", no address. Wait for "running" with an IP so that
+	// `ip` is known to whatever depends on this resource (provisioners,
+	// a load balancer's upstream list).
+	instance, err = waitForRunning(createCtx, r.client.Instances, instance.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Instance not ready", fmt.Sprintf("Instance %s was ordered but did not become running with an address: %s. It is in state as tainted, so the next apply replaces it. To keep it instead, run `terraform untaint` on this resource before the next apply.", data.ID.ValueString(), err))
 		return
 	}
 
@@ -556,6 +583,7 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	priorSSHKeyIDs := data.SSHKeyIDs
 	priorImage := data.Image
+	priorIP := data.IP
 
 	instance, err := r.client.Instances.GetByID(ctx, data.ID.ValueString())
 	if err != nil {
@@ -566,6 +594,7 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
 	preserveKnownSSHKeyIDs(priorSSHKeyIDs, &data)
 	preserveKnownImage(priorImage, &data)
+	preserveKnownIP(priorIP, instance, &data)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -584,15 +613,16 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	// os_volume.on_destroy is only read at Delete and never sent to the API,
-	// so changing it means recording the new value. Instances cannot be
-	// updated in the Verda API otherwise, only deleted and recreated.
-	onlyOnDestroy, diags := onlyOnDestroyChanged(ctx, plan, state)
+	// os_volume.on_destroy (read at Delete) and timeouts (read at Create)
+	// are never sent to the API, so changing them means recording the new
+	// values. Instances cannot be updated in the Verda API otherwise, only
+	// deleted and recreated.
+	onlyProviderSettings, diags := onlyProviderSettingsChanged(ctx, plan, state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !onlyOnDestroy {
+	if !onlyProviderSettings {
 		resp.Diagnostics.AddError(
 			"Update Not Supported",
 			"Instances cannot be updated for now. Most changes require replacing the resource.",
@@ -601,13 +631,15 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	state.OSVolume = plan.OSVolume
+	state.Timeouts = plan.Timeouts
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// onlyOnDestroyChanged reports whether plan and state differ in nothing but
-// os_volume.on_destroy. Computed attributes are skipped: the plan marks them
-// unknown on any update.
-func onlyOnDestroyChanged(ctx context.Context, plan, state InstanceResourceModel) (bool, diag.Diagnostics) {
+// onlyProviderSettingsChanged reports whether plan and state differ in
+// nothing but os_volume.on_destroy and timeouts. Computed attributes are
+// skipped: the plan marks them unknown on any update. timeouts is not
+// compared at all.
+func onlyProviderSettingsChanged(ctx context.Context, plan, state InstanceResourceModel) (bool, diag.Diagnostics) {
 	configured := []struct{ plan, state attr.Value }{
 		{plan.InstanceType, state.InstanceType},
 		{plan.Image, state.Image},
@@ -878,5 +910,53 @@ func (m *boolDefaultModifier) PlanModifyBool(ctx context.Context, req planmodifi
 
 	if req.PlanValue.IsUnknown() || req.PlanValue.IsNull() {
 		resp.PlanValue = types.BoolValue(m.defaultValue)
+	}
+}
+
+const defaultCreateTimeout = 20 * time.Minute
+
+// instancePollInterval is how often waitForRunning asks the API; tests shorten it.
+var instancePollInterval = 10 * time.Second
+
+// instanceGetter is the part of the SDK's InstanceService waitForRunning needs.
+type instanceGetter interface {
+	GetByID(ctx context.Context, id string) (*verda.Instance, error)
+}
+
+// waitForRunning polls the instance until it is running with an address, or
+// until it reaches a status it cannot leave, or until ctx is done; the caller
+// sets the deadline. A read error is not final: the API is inconsistent while
+// an instance is coming up.
+func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*verda.Instance, error) {
+	var last string
+	for {
+		instance, err := instances.GetByID(ctx, id)
+		if err == nil {
+			last = instance.Status
+			switch instance.Status {
+			case verda.StatusRunning:
+				if instance.IP != nil && *instance.IP != "" {
+					return instance, nil
+				}
+			case verda.StatusError, verda.StatusDiscontinued, verda.StatusNotFound, verda.StatusDeleting:
+				return nil, fmt.Errorf("instance entered status %q", instance.Status)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("not running with an address before the create timeout (last status %q)", last)
+			}
+			return nil, ctx.Err()
+		case <-time.After(instancePollInterval):
+		}
+	}
+}
+
+// preserveKnownIP keeps the address the state already has when the API
+// reports none for an instance that is still running.
+func preserveKnownIP(prior types.String, instance *verda.Instance, data *InstanceResourceModel) {
+	if data.IP.IsNull() && !prior.IsNull() && prior.ValueString() != "" && instance.Status == verda.StatusRunning {
+		data.IP = prior
 	}
 }
