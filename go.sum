@@ -63,8 +63,8 @@ github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81P
 github.com/stretchr/testify v1.7.2/go.mod h1:R6va5+xMeoiuVRoj+gSkQ7d3FALtqAAGI1FQKckRals=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/verda-cloud/verdacloud-sdk-go v1.4.0 h1:HdbYsOpYhlK7R+IhBZlDBLWQ5RP0rTh2uEsJRy9FRRU=
-github.com/verda-cloud/verdacloud-sdk-go v1.4.0/go.mod h1:pmlpiCL9fTSikZ3qWLJPpHOG0E8PKkQVUX5s4Z+SktY=
+github.com/verda-cloud/verdacloud-sdk-go v1.6.2 h1:1N22ANqRcyGyEb1WI+BGnbpc4yc1wC0PZ7KgGuqMry4=
+github.com/verda-cloud/verdacloud-sdk-go v1.6.2/go.mod h1:pmlpiCL9fTSikZ3qWLJPpHOG0E8PKkQVUX5s4Z+SktY=
 github.com/vmihailenco/msgpack/v5 v5.4.1 h1:cQriyiUvjTwOHg8QZaPihLWeRAAVoCpE00IUPn0Bjt8=
 github.com/vmihailenco/msgpack/v5 v5.4.1/go.mod h1:GaZTsDaehaPpQVyxrf5mtQlH+pc21PIudVV/E3rRQok=
 github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAhO7/IwNM9g=

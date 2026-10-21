@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
 	github.com/hashicorp/terraform-plugin-framework-timeouts v0.7.0
 	github.com/hashicorp/terraform-plugin-go v0.29.0
-	github.com/verda-cloud/verdacloud-sdk-go v1.4.0
+	github.com/verda-cloud/verdacloud-sdk-go v1.6.2
 )
 
 require (
