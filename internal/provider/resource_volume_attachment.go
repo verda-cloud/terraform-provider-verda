@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -159,8 +160,11 @@ func (r *VolumeAttachmentResource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	// If the volume is no longer attached to this instance, remove from state
-	if volume.InstanceID == nil || *volume.InstanceID != data.InstanceID.ValueString() {
+	attached := (volume.InstanceID != nil && *volume.InstanceID == data.InstanceID.ValueString()) ||
+		slices.ContainsFunc(volume.Instances, func(instance verda.VolumeAttachedInstance) bool {
+			return instance.ID == data.InstanceID.ValueString()
+		})
+	if !attached {
 		resp.State.RemoveResource(ctx)
 		return
 	}
