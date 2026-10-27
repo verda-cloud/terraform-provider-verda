@@ -160,6 +160,9 @@ func (p *VerdaProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewContainerResource,
 		NewContainerRegistryCredentialsResource,
 		NewServerlessJobResource,
+		NewManagedKubernetesClusterResource,
+		NewManagedKubernetesNodePoolResource,
+		NewManagedKubernetesKubeconfigResource,
 	}
 }
 

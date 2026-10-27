@@ -1,17 +1,18 @@
 module github.com/verda-cloud/terraform-provider-verda
 
-go 1.25.4
+go 1.26.10
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
 	github.com/hashicorp/terraform-plugin-framework-timeouts v0.7.0
+	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
 	github.com/hashicorp/terraform-plugin-go v0.29.0
-	github.com/verda-cloud/verdacloud-sdk-go v1.6.2
+	github.com/verda-cloud/verdacloud-sdk-go v1.7.2-0.20261104131330-7c26c3b0f835
 )
 
 require (
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
+	github.com/go-ozzo/ozzo-validation/v4 v4.4.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.7.0 // indirect

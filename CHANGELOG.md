@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(managed-kubernetes): Experimental managed Kubernetes support with three new resources. `verda_managed_kubernetes_cluster`: clusters are referenced by the composite ID `<location>/<cluster-name>`, only `kubernetes_version` updates in place (rolling control-plane upgrade), create/update wait for phase `running` and delete waits until the cluster is gone (configurable `timeouts = { ... }`, 30m defaults). `verda_managed_kubernetes_node_pool`: pools reference their cluster via `cluster_id`, only `replicas` updates in place (`0` scales down), and the computed `errors` attribute surfaces server-side failure reasons (`insufficient_capacity`, `insufficient_funds`, ...). `verda_managed_kubernetes_kubeconfig`: issues a client certificate — any change re-issues it by replacement — and exposes the rendered YAML as the sensitive `content` attribute; deletion does not revoke downloaded kubeconfigs (valid until `not_after`), and rotation is manual (taint and re-apply). All three resources support import via composite IDs.
+
+### Changed
+
+- chore(deps): Pin verdacloud-sdk-go to the unreleased managed Kubernetes commit 7c26c3b (pseudo-version `v1.7.2-0.20261104131330-7c26c3b0f835`) until a tagged SDK release ships it; the SDK's `go` directive raises the minimum toolchain to Go 1.26.10.
+
 ## [v1.1.4] - 2026-09-24
 
 ### Fixed
