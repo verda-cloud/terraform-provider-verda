@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -173,4 +174,115 @@ func (v osVolumeOnDestroyValidator) ValidateString(ctx context.Context, req vali
 	}
 	resp.Diagnostics.AddAttributeError(req.Path, "Invalid on_destroy",
 		fmt.Sprintf("%q is not one of %q, %q, %q", req.ConfigValue.ValueString(), osVolumeDeletePermanently, osVolumeMoveToTrash, osVolumeKeepDetached))
+}
+
+// rfc1918Blocks are the private IPv4 ranges a private network subnet must sit inside.
+var rfc1918Blocks = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+}
+
+// maxSubnetPrefixLen is the longest prefix (smallest subnet) the API accepts.
+const maxSubnetPrefixLen = 29
+
+// checkSubnetCIDR mirrors the API's subnet CIDR rules so that bad values fail
+// at plan time: IPv4, canonical network address, /29 or shorter, and entirely
+// inside one RFC 1918 block.
+func checkSubnetCIDR(s string) error {
+	prefix, err := netip.ParsePrefix(s)
+	if err != nil {
+		return fmt.Errorf("%q is not a valid CIDR block", s)
+	}
+	if !prefix.Addr().Is4() {
+		return fmt.Errorf("%q is not an IPv4 CIDR block", s)
+	}
+	if masked := prefix.Masked(); masked != prefix {
+		return fmt.Errorf("%q is not a network address; did you mean %q?", s, masked.String())
+	}
+	if prefix.Bits() > maxSubnetPrefixLen {
+		return fmt.Errorf("%q is too small; the prefix length must be /%d or shorter", s, maxSubnetPrefixLen)
+	}
+	for _, block := range rfc1918Blocks {
+		if block.Bits() <= prefix.Bits() && block.Contains(prefix.Addr()) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%q must be inside a private range: 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16", s)
+}
+
+// subnetCIDRValidator validates a private network subnet CIDR with checkSubnetCIDR.
+type subnetCIDRValidator struct{}
+
+func (v subnetCIDRValidator) Description(ctx context.Context) string {
+	return "must be a canonical IPv4 CIDR block of /29 or shorter inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16"
+}
+
+func (v subnetCIDRValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v subnetCIDRValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if err := checkSubnetCIDR(req.ConfigValue.ValueString()); err != nil {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid Subnet CIDR", err.Error())
+	}
+}
+
+// ipAllocationAuto asks the API to pick an address.
+const ipAllocationAuto = "auto"
+
+// ipAllocationNone asks the API not to assign an address.
+const ipAllocationNone = "none"
+
+// privateIPValidator accepts "auto" or a literal IPv4 address.
+type privateIPValidator struct{}
+
+func (v privateIPValidator) Description(ctx context.Context) string {
+	return `must be "auto" or an IPv4 address`
+}
+
+func (v privateIPValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v privateIPValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	if s == ipAllocationAuto {
+		return
+	}
+	if addr, err := netip.ParseAddr(s); err == nil && addr.Is4() {
+		return
+	}
+	resp.Diagnostics.AddAttributeError(req.Path, "Invalid Private IP",
+		fmt.Sprintf("%q must be %q or an IPv4 address", s, ipAllocationAuto))
+}
+
+// publicIPValidator accepts "auto" or "none".
+type publicIPValidator struct{}
+
+func (v publicIPValidator) Description(ctx context.Context) string {
+	return `must be "auto" or "none"`
+}
+
+func (v publicIPValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v publicIPValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	switch s := req.ConfigValue.ValueString(); s {
+	case ipAllocationAuto, ipAllocationNone:
+		return
+	default:
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid Public IP",
+			fmt.Sprintf("%q must be %q or %q", s, ipAllocationAuto, ipAllocationNone))
+	}
 }

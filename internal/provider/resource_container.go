@@ -708,9 +708,8 @@ func (r *ContainerResource) waitForDeletionComplete(ctx context.Context, deploym
 		// Try to get the deployment
 		_, err := r.client.ContainerDeployments.GetDeploymentByName(ctx, deploymentName)
 		if err != nil {
-			// Check if it's a 404 error (deployment not found = successfully deleted)
-			errStr := err.Error()
-			if strings.Contains(errStr, "404") || strings.Contains(strings.ToLower(errStr), "not found") {
+			// A 404 means the deployment is gone: deletion is complete
+			if isNotFound(err) {
 				return nil
 			}
 			// For other errors, continue polling (deployment might be in transition)

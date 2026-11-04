@@ -112,8 +112,23 @@ The Verda provider includes the following resources:
 
 - [verda_volume](resources/volume.md) - Persistent NVMe storage volumes
 
+### Networking
+
+Verda Private Networks are rolling out across the Verda fleet, starting with `FIN-03`.
+
+- [verda_private_network](resources/private_network.md) - Private networks
+- [verda_subnet](resources/subnet.md) - Subnets of a private network, per location
+- [verda_network_route](resources/network_route.md) - Routes a subnet's traffic through an instance, e.g. a NAT instance
+- [verda_private_network_default](resources/private_network_default.md) - The project's default private network
+- [verda_subnet_default](resources/subnet_default.md) - A private network's default subnet in a location
+
 ### Containers
 
 - [verda_container](resources/container.md) - Serverless container deployments with auto-scaling
 - [verda_serverless_job](resources/serverless_job.md) - Batch job deployments
 - [verda_container_registry_credentials](resources/container_registry_credentials.md) - Private registry authentication
+
+## Data Sources
+
+- [verda_private_network](data-sources/private_network.md) - Look up a private network by ID, name, or as the project default
+- [verda_subnet](data-sources/subnet.md) - Look up a private network subnet by ID, name, or as a location's default

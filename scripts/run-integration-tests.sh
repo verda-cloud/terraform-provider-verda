@@ -12,7 +12,7 @@
 #   --terraform     Use Terraform CLI (default)
 #   --opentofu      Use OpenTofu CLI
 #   --all           Run all tests including expensive GPU tests
-#   --quick         Run only quick tests (skip instance, container, serverless_job)
+#   --quick         Run only quick tests (skip instance, container, serverless_job, private network)
 #   --test NAME     Run a specific test (e.g., --test SSHKey)
 #   --cleanup-only  Only run cleanup (no tests)
 #   --help          Show this help message

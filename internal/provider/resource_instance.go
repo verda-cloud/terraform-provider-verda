@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -40,6 +41,7 @@ import (
 
 var _ resource.Resource = &InstanceResource{}
 var _ resource.ResourceWithImportState = &InstanceResource{}
+var _ resource.ResourceWithValidateConfig = &InstanceResource{}
 
 func NewInstanceResource() resource.Resource {
 	return &InstanceResource{}
@@ -50,32 +52,49 @@ type InstanceResource struct {
 }
 
 type InstanceResourceModel struct {
-	ID              types.String   `tfsdk:"id"`
-	InstanceType    types.String   `tfsdk:"instance_type"`
-	Image           types.String   `tfsdk:"image"`
-	Hostname        types.String   `tfsdk:"hostname"`
-	Description     types.String   `tfsdk:"description"`
-	PricePerHour    types.Float64  `tfsdk:"price_per_hour"`
-	IP              types.String   `tfsdk:"ip"`
-	Status          types.String   `tfsdk:"status"`
-	CreatedAt       types.String   `tfsdk:"created_at"`
-	SSHKeyIDs       types.Set      `tfsdk:"ssh_key_ids"`
-	Location        types.String   `tfsdk:"location"`
-	IsSpot          types.Bool     `tfsdk:"is_spot"`
-	OSName          types.String   `tfsdk:"os_name"`
-	StartupScriptID types.String   `tfsdk:"startup_script_id"`
-	OSVolumeID      types.String   `tfsdk:"os_volume_id"`
-	Contract        types.String   `tfsdk:"contract"`
-	Pricing         types.String   `tfsdk:"pricing"`
-	CPU             types.Object   `tfsdk:"cpu"`
-	GPU             types.Object   `tfsdk:"gpu"`
-	Memory          types.Object   `tfsdk:"memory"`
-	GPUMemory       types.Object   `tfsdk:"gpu_memory"`
-	Storage         types.Object   `tfsdk:"storage"`
-	Volumes         types.List     `tfsdk:"volumes"`
-	ExistingVolumes types.List     `tfsdk:"existing_volumes"`
-	OSVolume        types.Object   `tfsdk:"os_volume"`
-	Timeouts        timeouts.Value `tfsdk:"timeouts"`
+	ID               types.String   `tfsdk:"id"`
+	InstanceType     types.String   `tfsdk:"instance_type"`
+	Image            types.String   `tfsdk:"image"`
+	Hostname         types.String   `tfsdk:"hostname"`
+	Description      types.String   `tfsdk:"description"`
+	PricePerHour     types.Float64  `tfsdk:"price_per_hour"`
+	IP               types.String   `tfsdk:"ip"`
+	Status           types.String   `tfsdk:"status"`
+	CreatedAt        types.String   `tfsdk:"created_at"`
+	SSHKeyIDs        types.Set      `tfsdk:"ssh_key_ids"`
+	Location         types.String   `tfsdk:"location"`
+	IsSpot           types.Bool     `tfsdk:"is_spot"`
+	OSName           types.String   `tfsdk:"os_name"`
+	StartupScriptID  types.String   `tfsdk:"startup_script_id"`
+	OSVolumeID       types.String   `tfsdk:"os_volume_id"`
+	Contract         types.String   `tfsdk:"contract"`
+	Pricing          types.String   `tfsdk:"pricing"`
+	CPU              types.Object   `tfsdk:"cpu"`
+	GPU              types.Object   `tfsdk:"gpu"`
+	Memory           types.Object   `tfsdk:"memory"`
+	GPUMemory        types.Object   `tfsdk:"gpu_memory"`
+	Storage          types.Object   `tfsdk:"storage"`
+	Volumes          types.List     `tfsdk:"volumes"`
+	ExistingVolumes  types.List     `tfsdk:"existing_volumes"`
+	OSVolume         types.Object   `tfsdk:"os_volume"`
+	Network          types.Object   `tfsdk:"network"`
+	PrivateNetworkID types.String   `tfsdk:"private_network_id"`
+	PrivateIPAddr    types.String   `tfsdk:"private_ip_address"`
+	Timeouts         timeouts.Value `tfsdk:"timeouts"`
+}
+
+// InstanceNetworkModel is the network block: where a private network instance is placed.
+type InstanceNetworkModel struct {
+	SubnetID  types.String `tfsdk:"subnet_id"`
+	PrivateIP types.String `tfsdk:"private_ip"`
+	PublicIP  types.String `tfsdk:"public_ip"`
+}
+
+// instanceNetworkAttrTypes is the object type of the network block.
+var instanceNetworkAttrTypes = map[string]attr.Type{
+	"subnet_id":  types.StringType,
+	"private_ip": types.StringType,
+	"public_ip":  types.StringType,
 }
 
 type CPUModel struct {
@@ -186,7 +205,21 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			},
 			"ip": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "IP address of the instance",
+				MarkdownDescription: "Public IP address of the instance. Null for a private network instance with `network.public_ip = \"none\"`.",
+			},
+			"private_network_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "ID of the private network the instance is on. Null for an instance without a `network` block.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"private_ip_address": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Private IP address of the instance in its private network subnet. Null for an instance without a `network` block.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
@@ -421,6 +454,89 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Create: true,
 			}),
 		},
+		Blocks: map[string]schema.Block{
+			"network": schema.SingleNestedBlock{
+				MarkdownDescription: "Places the instance on a private network subnet. Leave the block out for public networking " +
+					"without a private network; the instance does not join the project's default private network. The instance always gets a private IP in the subnet. Private network placement is fixed " +
+					"at deploy time: changing anything in this block replaces the instance.",
+				// Block modifiers run before the attributes' own: adding or
+				// removing the block replaces the instance here, changes
+				// inside it are judged per attribute below.
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.RequiresReplaceIf(
+						func(ctx context.Context, req planmodifier.ObjectRequest, resp *objectplanmodifier.RequiresReplaceIfFuncResponse) {
+							resp.RequiresReplace = req.PlanValue.IsNull() != req.StateValue.IsNull()
+						},
+						"Adding or removing the network block requires replacing the instance.",
+						"Adding or removing the network block requires replacing the instance.",
+					),
+				},
+				Attributes: map[string]schema.Attribute{
+					"subnet_id": schema.StringAttribute{
+						// Required inside the block; the block itself is optional.
+						Optional:            true,
+						MarkdownDescription: "ID of the private network subnet (`sn_…`) to place the instance on. Must be in the instance's location. Required in the block.",
+						Validators: []validator.String{
+							stringvalidator.LengthAtLeast(1),
+						},
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"private_ip": schema.StringAttribute{
+						Optional:            true,
+						Computed:            true,
+						Default:             stringdefault.StaticString(ipAllocationAuto),
+						MarkdownDescription: "`auto` (default) to let the platform pick an address in the subnet, or a specific IPv4 address in the subnet. The assigned address is exported as `private_ip_address`.",
+						Validators: []validator.String{
+							privateIPValidator{},
+						},
+						// "auto" and the address the instance already has are
+						// the same placement: switching between them (as after
+						// an import) updates state only.
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplaceIf(
+								func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+									var assigned types.String
+									resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("private_ip_address"), &assigned)...)
+									resp.RequiresReplace = !privateIPEquivalent(req.PlanValue, req.StateValue, assigned)
+								},
+								"Changing private_ip requires replacing the instance, unless it switches between \"auto\" and the address the instance already has.",
+								"Changing `private_ip` requires replacing the instance, unless it switches between `auto` and the address the instance already has.",
+							),
+						},
+					},
+					"public_ip": schema.StringAttribute{
+						Optional:            true,
+						Computed:            true,
+						Default:             stringdefault.StaticString(ipAllocationAuto),
+						MarkdownDescription: "`auto` (default) to give the instance a public IP as well, or `none` for a private-only instance. A private-only instance can reach the internet through a `verda_network_route`.",
+						Validators: []validator.String{
+							publicIPValidator{},
+						},
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// ValidateConfig requires network.subnet_id when the network block is set.
+// A block's attributes cannot be Required without making the block mandatory.
+func (r *InstanceResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var network types.Object
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("network"), &network)...)
+	if resp.Diagnostics.HasError() || network.IsNull() || network.IsUnknown() {
+		return
+	}
+	var subnetID types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("network").AtName("subnet_id"), &subnetID)...)
+	if !resp.Diagnostics.HasError() && subnetID.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("network").AtName("subnet_id"), "Missing subnet_id",
+			"network.subnet_id is required when the network block is set.")
 	}
 }
 
@@ -539,6 +655,11 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		createReq.OSVolume = osVolumeReq
 	}
 
+	network := setCreateRequestNetwork(ctx, data.Network, &createReq, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	instance, err := r.client.Instances.Create(createCtx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create instance, got error: %s", err))
@@ -557,7 +678,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	// "provisioning", no address. Wait for "running" with an IP so that
 	// `ip` is known to whatever depends on this resource (provisioners,
 	// a load balancer's upstream list).
-	instance, err = waitForRunning(createCtx, r.client.Instances, instance.ID)
+	instance, err = waitForRunning(createCtx, r.client.Instances, instance.ID, addressesFor(network))
 	if err != nil {
 		resp.Diagnostics.AddError("Instance not ready", fmt.Sprintf("Instance %s was ordered but did not become running with an address: %s. It is in state as tainted, so the next apply replaces it. To keep it instead, run `terraform untaint` on this resource before the next apply.", data.ID.ValueString(), err))
 		return
@@ -567,6 +688,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	r.flattenInstanceToModel(ctx, instance, &data, &resp.Diagnostics)
 	preserveKnownSSHKeyIDs(plannedSSHKeyIDs, &data)
 	preserveKnownImage(plannedImage, &data)
+	resp.Diagnostics.Append(refreshNetwork(ctx, instance, &data)...)
 
 	// Update state with full instance details (even if there were non-critical errors)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -595,6 +717,7 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	preserveKnownSSHKeyIDs(priorSSHKeyIDs, &data)
 	preserveKnownImage(priorImage, &data)
 	preserveKnownIP(priorIP, instance, &data)
+	resp.Diagnostics.Append(refreshNetwork(ctx, instance, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -614,8 +737,9 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	// os_volume.on_destroy (read at Delete) and timeouts (read at Create)
-	// are never sent to the API, so changing them means recording the new
-	// values. Instances cannot be updated in the Verda API otherwise, only
+	// are never sent to the API, and network.private_ip switching between
+	// "auto" and the assigned address changes nothing, so these changes mean
+	// recording the new values. Instances cannot be updated in the Verda API otherwise, only
 	// deleted and recreated.
 	onlyProviderSettings, diags := onlyProviderSettingsChanged(ctx, plan, state)
 	resp.Diagnostics.Append(diags...)
@@ -631,6 +755,7 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	state.OSVolume = plan.OSVolume
+	state.Network = plan.Network
 	state.Timeouts = plan.Timeouts
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -660,12 +785,16 @@ func onlyProviderSettingsChanged(ctx context.Context, plan, state InstanceResour
 		}
 	}
 
+	same, diags := networkEquivalent(ctx, plan.Network, state.Network, state.PrivateIPAddr)
+	if diags.HasError() || !same {
+		return false, diags
+	}
+
 	if plan.OSVolume.IsNull() || plan.OSVolume.IsUnknown() || state.OSVolume.IsNull() || state.OSVolume.IsUnknown() {
 		return plan.OSVolume.Equal(state.OSVolume), nil
 	}
 
 	var planVolume, stateVolume OSVolumeCreateModel
-	var diags diag.Diagnostics
 	diags.Append(plan.OSVolume.As(ctx, &planVolume, basetypes.ObjectAsOptions{})...)
 	diags.Append(state.OSVolume.As(ctx, &stateVolume, basetypes.ObjectAsOptions{})...)
 	if diags.HasError() {
@@ -707,6 +836,24 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 
 func (r *InstanceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Read only refreshes a network block that is already in state, so that
+	// an instance without one never gains one. An imported private network instance gets
+	// its block here instead.
+	instance, err := r.client.Instances.GetByID(ctx, req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read instance, got error: %s", err))
+		return
+	}
+	network, diags := importedNetwork(instance)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("network"), network)...)
 }
 
 func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance *verda.Instance, data *InstanceResourceModel, diagnostics *diag.Diagnostics) {
@@ -729,6 +876,9 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 	} else {
 		data.IP = types.StringNull()
 	}
+
+	data.PrivateNetworkID = types.StringPointerValue(nonEmpty(instance.PrivateNetworkID))
+	data.PrivateIPAddr = types.StringPointerValue(nonEmpty(instance.PrivateIP))
 
 	if instance.OSVolumeID != nil {
 		data.OSVolumeID = types.StringValue(*instance.OSVolumeID)
@@ -923,11 +1073,33 @@ type instanceGetter interface {
 	GetByID(ctx context.Context, id string) (*verda.Instance, error)
 }
 
-// waitForRunning polls the instance until it is running with an address, or
-// until it reaches a status it cannot leave, or until ctx is done; the caller
-// sets the deadline. A read error is not final: the API is inconsistent while
-// an instance is coming up.
-func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*verda.Instance, error) {
+// instanceAddresses says which addresses a new instance must have before
+// Create returns, so that dependents see them.
+type instanceAddresses struct {
+	public, private bool
+}
+
+// legacyAddresses is what an instance without a network block gets.
+var legacyAddresses = instanceAddresses{public: true}
+
+// addressesFor returns the addresses to wait for given the network block's
+// public_ip setting; nil means no block.
+func addressesFor(network *InstanceNetworkModel) instanceAddresses {
+	if network == nil {
+		return legacyAddresses
+	}
+	return instanceAddresses{public: network.PublicIP.ValueString() != ipAllocationNone, private: true}
+}
+
+func (a instanceAddresses) assigned(instance *verda.Instance) bool {
+	return (!a.public || nonEmpty(instance.IP) != nil) && (!a.private || nonEmpty(instance.PrivateIP) != nil)
+}
+
+// waitForRunning polls the instance until it is running with the addresses
+// it should have, or until it reaches a status it cannot leave, or until ctx
+// is done; the caller sets the deadline. A read error is not final: the API
+// is inconsistent while an instance is coming up.
+func waitForRunning(ctx context.Context, instances instanceGetter, id string, want instanceAddresses) (*verda.Instance, error) {
 	var last string
 	for {
 		instance, err := instances.GetByID(ctx, id)
@@ -935,7 +1107,7 @@ func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*
 			last = instance.Status
 			switch instance.Status {
 			case verda.StatusRunning:
-				if instance.IP != nil && *instance.IP != "" {
+				if want.assigned(instance) {
 					return instance, nil
 				}
 			case verda.StatusError, verda.StatusDiscontinued, verda.StatusNotFound, verda.StatusDeleting:
@@ -959,4 +1131,112 @@ func preserveKnownIP(prior types.String, instance *verda.Instance, data *Instanc
 	if data.IP.IsNull() && !prior.IsNull() && prior.ValueString() != "" && instance.Status == verda.StatusRunning {
 		data.IP = prior
 	}
+}
+
+// setCreateRequestNetwork copies the network block into the create request
+// and returns it, or returns nil when the block is not set. The API takes
+// private_ip and public_ip together or not at all; the block always sends both.
+func setCreateRequestNetwork(ctx context.Context, network types.Object, createReq *verda.CreateInstanceRequest, diagnostics *diag.Diagnostics) *InstanceNetworkModel {
+	if network.IsNull() || network.IsUnknown() {
+		return nil
+	}
+	var model InstanceNetworkModel
+	diagnostics.Append(network.As(ctx, &model, basetypes.ObjectAsOptions{})...)
+	if diagnostics.HasError() {
+		return nil
+	}
+	privateIP, publicIP := model.PrivateIP.ValueString(), model.PublicIP.ValueString()
+	if privateIP == "" {
+		privateIP = ipAllocationAuto
+	}
+	if publicIP == "" {
+		publicIP = ipAllocationAuto
+	}
+	model.PrivateIP, model.PublicIP = types.StringValue(privateIP), types.StringValue(publicIP)
+
+	createReq.Subnet = model.SubnetID.ValueString()
+	private, public := verda.IPAllocation(privateIP), verda.IPAllocation(publicIP)
+	createReq.PrivateIP, createReq.PublicIP = &private, &public
+	return &model
+}
+
+// refreshNetwork updates network.subnet_id from the API when the block is in
+// state. private_ip and public_ip keep their configured values: "auto" would
+// otherwise show a diff against the assigned address.
+func refreshNetwork(ctx context.Context, instance *verda.Instance, data *InstanceResourceModel) diag.Diagnostics {
+	if data.Network.IsNull() || data.Network.IsUnknown() {
+		return nil
+	}
+	var model InstanceNetworkModel
+	diags := data.Network.As(ctx, &model, basetypes.ObjectAsOptions{})
+	if diags.HasError() {
+		return diags
+	}
+	if subnetID := nonEmpty(instance.SubnetID); subnetID != nil {
+		model.SubnetID = types.StringValue(*subnetID)
+	}
+	network, d := types.ObjectValueFrom(ctx, instanceNetworkAttrTypes, model)
+	diags.Append(d...)
+	data.Network = network
+	return diags
+}
+
+// importedNetwork builds the network block for an imported instance: null
+// for an instance without a private network, otherwise its subnet with private_ip "auto"
+// and public_ip "auto" or "none" depending on whether it has a public IP.
+func importedNetwork(instance *verda.Instance) (types.Object, diag.Diagnostics) {
+	subnetID := nonEmpty(instance.SubnetID)
+	if subnetID == nil {
+		return types.ObjectNull(instanceNetworkAttrTypes), nil
+	}
+	publicIP := ipAllocationNone
+	if nonEmpty(instance.IP) != nil {
+		publicIP = ipAllocationAuto
+	}
+	return types.ObjectValue(instanceNetworkAttrTypes, map[string]attr.Value{
+		"subnet_id":  types.StringValue(*subnetID),
+		"private_ip": types.StringValue(ipAllocationAuto),
+		"public_ip":  types.StringValue(publicIP),
+	})
+}
+
+// nonEmpty returns p, or nil when p points at an empty string.
+func nonEmpty(p *string) *string {
+	if p == nil || *p == "" {
+		return nil
+	}
+	return p
+}
+
+// privateIPEquivalent reports whether two private_ip settings place the
+// instance the same way: equal, or "auto" and the address it was assigned.
+func privateIPEquivalent(a, b, assigned types.String) bool {
+	if a.Equal(b) {
+		return true
+	}
+	if a.IsUnknown() || b.IsUnknown() || a.IsNull() || b.IsNull() || assigned.IsNull() || assigned.IsUnknown() {
+		return false
+	}
+	x, y, addr := a.ValueString(), b.ValueString(), assigned.ValueString()
+	return (x == ipAllocationAuto && y == addr) || (y == ipAllocationAuto && x == addr)
+}
+
+// networkEquivalent reports whether two network blocks place the instance
+// the same way; see privateIPEquivalent.
+func networkEquivalent(ctx context.Context, plan, state types.Object, assigned types.String) (bool, diag.Diagnostics) {
+	if plan.Equal(state) {
+		return true, nil
+	}
+	if plan.IsNull() || plan.IsUnknown() || state.IsNull() || state.IsUnknown() {
+		return false, nil
+	}
+	var p, s InstanceNetworkModel
+	var diags diag.Diagnostics
+	diags.Append(plan.As(ctx, &p, basetypes.ObjectAsOptions{})...)
+	diags.Append(state.As(ctx, &s, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return false, diags
+	}
+	return p.SubnetID.Equal(s.SubnetID) && p.PublicIP.Equal(s.PublicIP) &&
+		privateIPEquivalent(p.PrivateIP, s.PrivateIP, assigned), nil
 }

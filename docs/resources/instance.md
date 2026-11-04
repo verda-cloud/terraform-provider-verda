@@ -91,6 +91,43 @@ resource "verda_instance" "spot" {
 
 ~> **Note:** Spot instances offer significant cost savings but may be terminated when capacity is needed. Use them for fault-tolerant workloads.
 
+### Instance on a Private Network
+
+Place an instance on a private network subnet with the `network` block. The instance always gets a private IP in the subnet; set `public_ip = "none"` for a private-only instance. The instance's `location` must match the subnet's.
+
+```terraform
+resource "verda_private_network" "example" {
+  name = "my-network"
+}
+
+resource "verda_subnet" "app" {
+  private_network_id = verda_private_network.example.id
+  location           = "FIN-03"
+  name               = "app"
+  cidr               = "10.10.0.0/24"
+}
+
+resource "verda_instance" "on_private_network" {
+  instance_type = "1B200.30V"
+  image         = "ubuntu-24.04-cuda-12.8-open-docker"
+  hostname      = "private-worker"
+  description   = "GPU instance on a private network"
+  location      = "FIN-03"
+
+  ssh_key_ids = [verda_ssh_key.example.id]
+
+  network {
+    subnet_id  = verda_subnet.app.id
+    private_ip = "10.10.0.10"
+    public_ip  = "none"
+  }
+}
+```
+
+-> **Note:** Verda Private Networks are rolling out across the Verda fleet: they are available in `FIN-03` today, with more locations coming. The locations API reports `is_private_networks_enabled` for each location.
+
+-> **Tip:** A private-only instance can reach the internet through a NAT instance and a [`verda_network_route`](network_route.md).
+
 ## Finding Available Instance Types and Images
 
 To discover available instance types, images, and locations for your Verda account, use the Verda API:
@@ -123,11 +160,12 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `existing_volumes` (List of String) IDs of existing volumes to attach to the instance.
 - `is_spot` (Boolean) Whether this is a spot instance. Defaults to `false`.
 - `location` (String) Location code for the instance. Defaults to `FIN-01`.
+- `network` (Block) Places the instance on a private network subnet. Leave the block out for public networking without a private network; the instance does not join the project's default private network. Changing anything in the block replaces the instance. See [below for nested schema](#nestedblock--network).
 - `os_volume` (Attributes) OS volume configuration. See [below for nested schema](#nestedatt--os_volume).
 - `pricing` (String) Pricing model for the instance.
 - `ssh_key_ids` (List of String) List of SSH key IDs to add to the instance.
 - `startup_script_id` (String) ID of the startup script to run on instance creation.
-- `timeouts` (Attributes) `create` (default `20m`): how long the create may take, from placing the order to the instance running with an address, before the apply fails. Changing it later updates state in place without touching the instance. A failed create leaves the instance in state as tainted, so the next apply replaces it; run `terraform untaint` on the resource to keep it. The API accepts the order before the instance exists; the resource returns once `ip` is known.
+- `timeouts` (Attributes) `create` (default `20m`): how long the create may take, from placing the order to the instance running with an address, before the apply fails. Changing it later updates state in place without touching the instance. A failed create leaves the instance in state as tainted, so the next apply replaces it; run `terraform untaint` on the resource to keep it. The API accepts the order before the instance exists; the resource returns once its addresses are known (`ip`, and `private_ip_address` for an instance with a `network` block).
 - `volumes` (Attributes List) Volumes to create and attach to the instance. See [below for nested schema](#nestedatt--volumes).
 
 ### Read-Only
@@ -137,13 +175,30 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `gpu` (Attributes) GPU information. See [below for nested schema](#nestedatt--gpu).
 - `gpu_memory` (Attributes) GPU memory information. See [below for nested schema](#nestedatt--gpu_memory).
 - `id` (String) Unique instance identifier.
-- `ip` (String) Public IP address of the instance.
+- `ip` (String) Public IP address of the instance. Null for a private-only instance (`network.public_ip = "none"`).
 - `memory` (Attributes) System memory information. See [below for nested schema](#nestedatt--memory).
 - `os_name` (String) Operating system name.
 - `os_volume_id` (String) ID of the OS volume.
 - `price_per_hour` (Number) Price per hour for the instance.
+- `private_ip_address` (String) Private IP address of the instance in its private network subnet. Null for an instance without a `network` block.
 - `status` (String) Current status of the instance (e.g., `running`, `stopped`).
 - `storage` (Attributes) Storage information. See [below for nested schema](#nestedatt--storage).
+- `private_network_id` (String) ID of the private network the instance is on. Null for an instance without a `network` block.
+
+<a id="nestedblock--network"></a>
+
+### Nested Schema for `network`
+
+Required:
+
+- `subnet_id` (String) ID of the private network subnet (`sn_…`) to place the instance on. Must be in the instance's location.
+
+Optional:
+
+- `private_ip` (String) `auto` (default) to let the platform pick an address in the subnet, or a specific IPv4 address in the subnet. The assigned address is exported as `private_ip_address`. Set the instance's `location` explicitly to a location where private networks are available: it defaults to `FIN-01`, which private networks have not reached yet.
+- `public_ip` (String) `auto` (default) to give the instance a public IP as well, or `none` for a private-only instance. A private-only instance can reach the internet through a [`verda_network_route`](network_route.md).
+
+Private network placement is fixed at deploy time: changing any of these replaces the instance. The one exception is switching `private_ip` between `auto` and the address the instance already has: that only updates state. On import, `private_ip` is set to `auto`, and `public_ip` to `auto` or `none` depending on whether the instance has a public IP; a config that pins the instance's current private IP therefore plans an in-place state update, not a replacement.
 
 <a id="nestedatt--os_volume"></a>
 

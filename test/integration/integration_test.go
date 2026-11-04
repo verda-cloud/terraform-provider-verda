@@ -430,6 +430,7 @@ func TestAllResources(t *testing.T) {
 	t.Run("Instance", TestInstanceResource)
 	t.Run("Container", TestContainerResource)
 	t.Run("ServerlessJob", TestServerlessJobResource)
+	t.Run("PrivateNetwork", TestPrivateNetworkResource)
 }
 
 // ExampleUsage demonstrates how to run the tests

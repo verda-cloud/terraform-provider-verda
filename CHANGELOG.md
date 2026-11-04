@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(private-networks): Verda Private Networks, rolling out across the Verda fleet, starting with `FIN-03`. New resources `verda_private_network`, `verda_subnet` (plan-time CIDR check: IPv4 network address, `/29` or larger, inside an RFC 1918 range), `verda_network_route` (creating it takes over an existing route for the same destination; `instance_id` changes in place), `verda_private_network_default` and `verda_subnet_default` (destroying them only removes them from state). New data sources `verda_private_network` and `verda_subnet`, the provider's first. Private network and subnet deletes retry while instances on them finish deleting, up to `timeouts = { delete = "10m" }`.
+- feat(instances): `network { subnet_id, private_ip, public_ip }` block places an instance on a private network subnet; `public_ip = "none"` makes it private-only. New computed `private_network_id` and `private_ip_address`. Changing the block replaces the instance, except switching `private_ip` between `auto` and the address the instance already has. Instances without the block are unchanged.
+
+### Changed
+
+- chore: verdacloud-sdk-go v1.7.1, which requires Go 1.26.10.
+- fix(containers): deletion polling recognises "not found" by the API status code instead of matching the error text.
+
 ## [v1.1.4] - 2026-09-24
 
 ### Fixed
