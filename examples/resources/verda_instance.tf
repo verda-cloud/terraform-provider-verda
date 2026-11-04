@@ -63,3 +63,24 @@ output "instance_ip" {
 output "instance_status" {
   value = verda_instance.example.status
 }
+
+# Instance on a private network subnet, with a fixed private IP and no public IP
+resource "verda_instance" "on_private_network" {
+  instance_type = "1B200.30V"
+  image         = "ubuntu-24.04-cuda-12.8-open-docker"
+  hostname      = "private-worker"
+  description   = "GPU instance on a private network"
+  location      = "FIN-03" # Must match the subnet's location
+
+  ssh_key_ids = [verda_ssh_key.example.id]
+
+  network {
+    subnet_id  = verda_subnet.app.id
+    private_ip = "10.10.0.10"
+    public_ip  = "none"
+  }
+}
+
+output "instance_private_ip" {
+  value = verda_instance.on_private_network.private_ip_address
+}

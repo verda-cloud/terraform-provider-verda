@@ -107,6 +107,7 @@ VERDA_CLIENT_ID=xxx VERDA_CLIENT_SECRET=yyy \
   SKIP_INSTANCE_TEST=1 \
   SKIP_CONTAINER_TEST=1 \
   SKIP_SERVERLESS_JOB_TEST=1 \
+  SKIP_PRIVATE_NETWORK_TEST=1 \
   go test ./test/integration/... -v
 ```
 
@@ -129,6 +130,7 @@ Each test uses Terraform configurations that mirror the documentation examples:
 | `TestInstanceResource` | `verda_instance` | `testdata/instance/main.tf` |
 | `TestContainerResource` | `verda_container` | `testdata/container/main.tf` |
 | `TestServerlessJobResource` | `verda_serverless_job` | `testdata/serverless_job/main.tf` |
+| `TestPrivateNetworkResource` | `verda_private_network`, `verda_subnet`, `verda_network_route`, `verda_instance` (`network` block) | `testdata/private_network/main.tf` |
 
 ## Configurable Test Variables
 

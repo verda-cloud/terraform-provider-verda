@@ -393,7 +393,7 @@ func TestWaitForRunning(t *testing.T) {
 			{status: verda.StatusRunning}, // running, no address yet
 			{status: verda.StatusRunning, ip: "203.0.113.7"},
 		}}
-		inst, err := waitForRunning(withTimeout(t, time.Second), f, "i-1")
+		inst, err := waitForRunning(withTimeout(t, time.Second), f, "i-1", legacyAddresses)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -410,14 +410,14 @@ func TestWaitForRunning(t *testing.T) {
 			{err: errors.New("502")},
 			{status: verda.StatusRunning, ip: "203.0.113.8"},
 		}}
-		if _, err := waitForRunning(withTimeout(t, time.Second), f, "i-2"); err != nil {
+		if _, err := waitForRunning(withTimeout(t, time.Second), f, "i-2", legacyAddresses); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("a terminal status fails at once", func(t *testing.T) {
 		f := &fakeInstances{steps: []fakeStep{{status: verda.StatusError}}}
-		_, err := waitForRunning(withTimeout(t, time.Second), f, "i-3")
+		_, err := waitForRunning(withTimeout(t, time.Second), f, "i-3", legacyAddresses)
 		if err == nil || f.calls != 1 {
 			t.Fatalf("err = %v, calls = %d; want an error after one call", err, f.calls)
 		}
@@ -425,7 +425,7 @@ func TestWaitForRunning(t *testing.T) {
 
 	t.Run("the timeout names the last status", func(t *testing.T) {
 		f := &fakeInstances{steps: []fakeStep{{status: verda.StatusProvisioning}}}
-		_, err := waitForRunning(withTimeout(t, 5*time.Millisecond), f, "i-4")
+		_, err := waitForRunning(withTimeout(t, 5*time.Millisecond), f, "i-4", legacyAddresses)
 		if err == nil || !strings.Contains(err.Error(), verda.StatusProvisioning) {
 			t.Fatalf("err = %v; want a timeout naming %q", err, verda.StatusProvisioning)
 		}
@@ -437,7 +437,7 @@ func TestWaitForRunning(t *testing.T) {
 			{hang: true},
 		}}
 		start := time.Now()
-		_, err := waitForRunning(withTimeout(t, 20*time.Millisecond), f, "i-5")
+		_, err := waitForRunning(withTimeout(t, 20*time.Millisecond), f, "i-5", legacyAddresses)
 		if err == nil || !strings.Contains(err.Error(), verda.StatusProvisioning) {
 			t.Fatalf("err = %v; want a timeout naming %q", err, verda.StatusProvisioning)
 		}
@@ -450,7 +450,7 @@ func TestWaitForRunning(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		f := &fakeInstances{steps: []fakeStep{{status: verda.StatusProvisioning}}}
-		_, err := waitForRunning(ctx, f, "i-6")
+		_, err := waitForRunning(ctx, f, "i-6", legacyAddresses)
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v; want context.Canceled", err)
 		}
