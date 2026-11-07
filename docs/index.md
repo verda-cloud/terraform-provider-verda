@@ -117,3 +117,9 @@ The Verda provider includes the following resources:
 - [verda_container](resources/container.md) - Serverless container deployments with auto-scaling
 - [verda_serverless_job](resources/serverless_job.md) - Batch job deployments
 - [verda_container_registry_credentials](resources/container_registry_credentials.md) - Private registry authentication
+
+### Managed Kubernetes (experimental)
+
+- [verda_managed_kubernetes_cluster](resources/managed_kubernetes_cluster.md) - Managed Kubernetes clusters
+- [verda_managed_kubernetes_node_pool](resources/managed_kubernetes_node_pool.md) - Node pools for managed Kubernetes clusters
+- [verda_managed_kubernetes_kubeconfig](resources/managed_kubernetes_kubeconfig.md) - Client-certificate kubeconfigs

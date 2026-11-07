@@ -17,7 +17,13 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"regexp"
+	"strings"
+	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -173,4 +179,183 @@ func (v osVolumeOnDestroyValidator) ValidateString(ctx context.Context, req vali
 	}
 	resp.Diagnostics.AddAttributeError(req.Path, "Invalid on_destroy",
 		fmt.Sprintf("%q is not one of %q, %q, %q", req.ConfigValue.ValueString(), osVolumeDeletePermanently, osVolumeMoveToTrash, osVolumeKeepDetached))
+}
+
+var managedKubernetesDNS1123LabelRegexp = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// managedKubernetesDNS1123LabelValidator validates DNS-1123 label names used
+// for managed Kubernetes cluster and node pool names (max 30 chars).
+type managedKubernetesDNS1123LabelValidator struct {
+	maxLen int
+}
+
+func (v managedKubernetesDNS1123LabelValidator) Description(ctx context.Context) string {
+	return fmt.Sprintf("value must be a DNS-1123 label of at most %d characters", v.maxLen)
+}
+
+func (v managedKubernetesDNS1123LabelValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesDNS1123LabelValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	if len(s) == 0 || len(s) > v.maxLen || !managedKubernetesDNS1123LabelRegexp.MatchString(s) {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid name",
+			fmt.Sprintf("%q must be a DNS-1123 label of 1-%d characters: lowercase alphanumerics and '-', starting and ending with an alphanumeric", s, v.maxLen))
+	}
+}
+
+// managedKubernetesCIDRValidator validates an IPv4 CIDR prefix.
+type managedKubernetesCIDRValidator struct{}
+
+func (v managedKubernetesCIDRValidator) Description(ctx context.Context) string {
+	return "value must be an IPv4 CIDR prefix"
+}
+
+func (v managedKubernetesCIDRValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesCIDRValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	prefix, err := netip.ParsePrefix(s)
+	if err != nil || !prefix.Addr().Is4() {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid CIDR",
+			fmt.Sprintf("%q must be an IPv4 CIDR prefix, e.g. \"10.244.0.0/16\"", s))
+	}
+}
+
+// managedKubernetesPodCIDRBitsValidator rejects pod CIDRs smaller than /21,
+// matching the API rule. Syntax errors are left to managedKubernetesCIDRValidator.
+type managedKubernetesPodCIDRBitsValidator struct{}
+
+func (v managedKubernetesPodCIDRBitsValidator) Description(ctx context.Context) string {
+	return "pod_cidr must be /21 or larger"
+}
+
+func (v managedKubernetesPodCIDRBitsValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesPodCIDRBitsValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	prefix, err := netip.ParsePrefix(s)
+	if err != nil {
+		return
+	}
+	if prefix.Bits() > 21 {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid pod_cidr",
+			fmt.Sprintf("pod_cidr must be /21 or larger, got %q", s))
+	}
+}
+
+// managedKubernetesKubeconfigDurationValidator validates a cert lifetime in
+// Go duration syntax (e.g. "720h"), minimum 1 hour.
+type managedKubernetesKubeconfigDurationValidator struct{}
+
+func (v managedKubernetesKubeconfigDurationValidator) Description(ctx context.Context) string {
+	return "duration must be in Go duration syntax and at least 1h"
+}
+
+func (v managedKubernetesKubeconfigDurationValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesKubeconfigDurationValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid duration",
+			fmt.Sprintf("%q is not a valid Go duration (e.g. \"720h\")", s))
+		return
+	}
+	if d < time.Hour {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid duration",
+			fmt.Sprintf("duration must be at least 1h, got %q", s))
+	}
+}
+
+// managedKubernetesCompositeIDValidator validates slash-joined composite IDs
+// such as the cluster_id reference ("<location>/<cluster-name>").
+type managedKubernetesCompositeIDValidator struct {
+	segments int
+}
+
+func (v managedKubernetesCompositeIDValidator) Description(ctx context.Context) string {
+	return fmt.Sprintf("value must consist of %d slash-separated segments", v.segments)
+}
+
+func (v managedKubernetesCompositeIDValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesCompositeIDValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	s := req.ConfigValue.ValueString()
+	parts := strings.Split(s, "/")
+	if len(parts) != v.segments {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid ID format",
+			fmt.Sprintf("%q must consist of %d segments joined by '/' (e.g. \"FIN-03/my-cluster\"), got %d", s, v.segments, len(parts)))
+		return
+	}
+	for _, p := range parts {
+		if p == "" {
+			resp.Diagnostics.AddAttributeError(req.Path, "Invalid ID format",
+				fmt.Sprintf("%q must not contain empty segments", s))
+			return
+		}
+	}
+}
+
+// managedKubernetesCIDRsOverlap reports whether two CIDR strings parse into
+// overlapping prefixes; unparsable input is left to the CIDR validators.
+func managedKubernetesCIDRsOverlap(a, b string) bool {
+	pa, errA := netip.ParsePrefix(a)
+	pb, errB := netip.ParsePrefix(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return pa.Overlaps(pb)
+}
+
+// managedKubernetesServiceCIDROverlapValidator is a resource-level validator
+// on the managed Kubernetes cluster rejecting overlapping pod/service CIDRs.
+type managedKubernetesServiceCIDROverlapValidator struct{}
+
+func (v managedKubernetesServiceCIDROverlapValidator) Description(ctx context.Context) string {
+	return "service_cidr must not overlap pod_cidr"
+}
+
+func (v managedKubernetesServiceCIDROverlapValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v managedKubernetesServiceCIDROverlapValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var pod, service types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("pod_cidr"), &pod)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("service_cidr"), &service)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if pod.IsNull() || pod.IsUnknown() || service.IsNull() || service.IsUnknown() {
+		return
+	}
+	if managedKubernetesCIDRsOverlap(pod.ValueString(), service.ValueString()) {
+		resp.Diagnostics.AddAttributeError(path.Root("service_cidr"), "Overlapping CIDRs",
+			"service_cidr must not overlap pod_cidr")
+	}
 }

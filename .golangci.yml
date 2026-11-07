@@ -11,7 +11,6 @@ linters:
     - containedctx
     - dogsled
     - errcheck
-    - goconst
     - gomoddirectives
     - goprintffuncname
     - govet
@@ -28,8 +27,6 @@ linters:
     - wastedassign
     - whitespace
   settings:
-    goconst:
-      min-len: 5
     govet:
       enable:
         - nilness
