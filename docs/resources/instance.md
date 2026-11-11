@@ -91,6 +91,34 @@ resource "verda_instance" "spot" {
 
 ~> **Note:** Spot instances offer significant cost savings but may be terminated when capacity is needed. Use them for fault-tolerant workloads.
 
+### Instance on a private network (no public IP)
+
+Private Networks (beta, `FIN-03`) give the instance an address inside your own
+network. With `public_ip = "none"` the instance is unreachable from the internet
+and reaches it only through a route you add on the subnet.
+
+```hcl
+resource "verda_instance" "gpu" {
+  instance_type = "8B300.240V"
+  image         = "26.04.cuda13.4.docker"
+  hostname      = "gpu-01"
+  description   = "GPU worker"
+  location      = "FIN-03"
+  is_spot       = true
+
+  subnet     = "<subnet id>"
+  private_ip = "10.42.0.21"
+  public_ip  = "none"
+}
+
+output "gpu_private_ip" {
+  value = verda_instance.gpu.private_ipv4
+}
+```
+
+`private_ip` and `public_ip` must be set together (`auto`, `none` or an IPv4).
+Omitting both keeps legacy public networking.
+
 ## Finding Available Instance Types and Images
 
 To discover available instance types, images, and locations for your Verda account, use the Verda API:
@@ -122,6 +150,10 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `contract` (String) Contract type for the instance.
 - `existing_volumes` (List of String) IDs of existing volumes to attach to the instance.
 - `is_spot` (Boolean) Whether this is a spot instance. Defaults to `false`.
+- `network` (String) Private network (ID) to attach the instance to. Redundant when `subnet` is given; omitting both uses the project's default network when `private_ip` asks for a private address.
+- `private_ip` (String) Private address request: `auto`, `none`, or an IPv4 inside the subnet. Must be set together with `public_ip`. Changing it replaces the instance.
+- `public_ip` (String) Public address request: `auto` or `none` (`none` only together with a private address). Must be set together with `private_ip`. Changing it replaces the instance.
+- `subnet` (String) Subnet (ID) the private address is taken from. Defaults to the network's default subnet in the instance's location.
 - `location` (String) Location code for the instance. Defaults to `FIN-01`.
 - `os_volume` (Attributes) OS volume configuration. See [below for nested schema](#nestedatt--os_volume).
 - `pricing` (String) Pricing model for the instance.
@@ -131,6 +163,10 @@ For full API documentation, visit: [Verda API Reference](https://api.verda.com/v
 - `volumes` (Attributes List) Volumes to create and attach to the instance. See [below for nested schema](#nestedatt--volumes).
 
 ### Read-Only
+
+- `private_ipv4` (String) Private address the instance got; null for legacy networking.
+- `private_network_id` (String) ID of the private network the instance is attached to; null for legacy networking.
+- `subnet_id` (String) ID of the subnet the private address comes from; null for legacy networking.
 
 - `cpu` (Attributes) CPU information. See [below for nested schema](#nestedatt--cpu).
 - `created_at` (String) Creation timestamp in ISO 8601 format.

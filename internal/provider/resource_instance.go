@@ -76,6 +76,17 @@ type InstanceResourceModel struct {
 	ExistingVolumes types.List     `tfsdk:"existing_volumes"`
 	OSVolume        types.Object   `tfsdk:"os_volume"`
 	Timeouts        timeouts.Value `tfsdk:"timeouts"`
+
+	// Private networking (Verda Private Networks beta). The four inputs are
+	// sent as given and never overwritten from the API; the three computed
+	// fields carry what the API reports back.
+	Network          types.String `tfsdk:"network"`
+	Subnet           types.String `tfsdk:"subnet"`
+	PrivateIP        types.String `tfsdk:"private_ip"`
+	PublicIP         types.String `tfsdk:"public_ip"`
+	PrivateIPv4      types.String `tfsdk:"private_ipv4"`
+	PrivateNetworkID types.String `tfsdk:"private_network_id"`
+	SubnetID         types.String `tfsdk:"subnet_id"`
 }
 
 type CPUModel struct {
@@ -222,6 +233,46 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				PlanModifiers: []planmodifier.Bool{
 					planmodifier.Bool(&boolDefaultModifier{defaultValue: false}),
 				},
+			},
+			"network": schema.StringAttribute{
+				MarkdownDescription: "Private network to attach the instance to (ID). Redundant when `subnet` is given; omitting both uses the project's default network when `private_ip` asks for a private address.",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"subnet": schema.StringAttribute{
+				MarkdownDescription: "Subnet (ID) the private address is taken from. Defaults to the network's default subnet in the instance's location.",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"private_ip": schema.StringAttribute{
+				MarkdownDescription: "Private address request: `auto`, `none`, or an IPv4 inside the subnet. Must be set together with `public_ip`.",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"public_ip": schema.StringAttribute{
+				MarkdownDescription: "Public address request: `auto` or `none` (`none` only together with a private address; the instance is then unreachable from the internet). Must be set together with `private_ip`.",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"private_ipv4": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Private address the instance got (null for legacy networking)",
+			},
+			"private_network_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "ID of the private network the instance is attached to (null for legacy networking)",
+			},
+			"subnet_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "ID of the subnet the private address comes from (null for legacy networking)",
 			},
 			"os_name": schema.StringAttribute{
 				Computed:            true,
@@ -490,6 +541,11 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
+	setCreateRequestNetwork(data, &createReq, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if !data.Volumes.IsNull() {
 		var volumes []VolumeCreateModel
 		resp.Diagnostics.Append(data.Volumes.ElementsAs(ctx, &volumes, false)...)
@@ -588,6 +644,13 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	instance, err := r.client.Instances.GetByID(ctx, data.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read instance, got error: %s", err))
+		return
+	}
+
+	if instanceGone(instance) {
+		// Evicted spot nodes stay readable as "discontinued"; dropping them
+		// from state makes the next apply recreate them.
+		resp.State.RemoveResource(ctx)
 		return
 	}
 
@@ -736,6 +799,10 @@ func (r *InstanceResource) flattenInstanceToModel(ctx context.Context, instance 
 		data.OSVolumeID = types.StringNull()
 	}
 
+	data.PrivateIPv4 = stringPtrValue(instance.PrivateIP)
+	data.PrivateNetworkID = stringPtrValue(instance.PrivateNetworkID)
+	data.SubnetID = stringPtrValue(instance.SubnetID)
+
 	if instance.StartupScriptID != nil {
 		data.StartupScriptID = types.StringValue(*instance.StartupScriptID)
 	} else {
@@ -822,6 +889,53 @@ func setCreateRequestSSHKeyIDs(ctx context.Context, sshKeyIDs types.Set, createR
 	}
 
 	createReq.SSHKeyIDs = ids
+}
+
+// stringPtrValue maps a nullable API string to a Terraform string value.
+func stringPtrValue(s *string) types.String {
+	if s == nil {
+		return types.StringNull()
+	}
+	return types.StringValue(*s)
+}
+
+// setCreateRequestNetwork copies the private-network inputs onto the create
+// request. The API requires private_ip and public_ip together; a half-set
+// pair is reported here, before any request is made.
+func setCreateRequestNetwork(data InstanceResourceModel, createReq *verda.CreateInstanceRequest, diagnostics *diag.Diagnostics) {
+	known := func(v types.String) bool { return !v.IsNull() && !v.IsUnknown() && v.ValueString() != "" }
+
+	if known(data.Network) {
+		createReq.Network = data.Network.ValueString()
+	}
+	if known(data.Subnet) {
+		createReq.Subnet = data.Subnet.ValueString()
+	}
+
+	hasPrivate, hasPublic := known(data.PrivateIP), known(data.PublicIP)
+	if hasPrivate != hasPublic {
+		diagnostics.AddError(
+			"Invalid network configuration",
+			"private_ip and public_ip must be set together: use \"auto\", \"none\" or an IPv4 address for each (public_ip = \"none\" keeps the instance off the internet).",
+		)
+		return
+	}
+	if !hasPrivate {
+		return
+	}
+
+	privateAlloc := verda.IPAllocation(data.PrivateIP.ValueString())
+	publicAlloc := verda.IPAllocation(data.PublicIP.ValueString())
+	for name, alloc := range map[string]verda.IPAllocation{"private_ip": privateAlloc, "public_ip": publicAlloc} {
+		if err := alloc.Validate(); err != nil {
+			diagnostics.AddError("Invalid network configuration", fmt.Sprintf("%s: %s", name, err))
+		}
+	}
+	if diagnostics.HasError() {
+		return
+	}
+	createReq.PrivateIP = &privateAlloc
+	createReq.PublicIP = &publicAlloc
 }
 
 func preserveKnownSSHKeyIDs(sshKeyIDs types.Set, data *InstanceResourceModel) {
@@ -928,6 +1042,14 @@ type instanceGetter interface {
 // sets the deadline. A read error is not final: the API is inconsistent while
 // an instance is coming up.
 func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*verda.Instance, error) {
+	return waitForRunningWithInterval(ctx, instances, id, instancePollInterval)
+}
+
+// waitForRunningWithInterval is waitForRunning with the poll interval as a
+// parameter, so tests do not wait on the production interval. "Running with
+// an address" means a public IP for legacy networking, or a private address
+// for an instance on a private network (which may have no public IP at all).
+func waitForRunningWithInterval(ctx context.Context, instances instanceGetter, id string, interval time.Duration) (*verda.Instance, error) {
 	var last string
 	for {
 		instance, err := instances.GetByID(ctx, id)
@@ -935,10 +1057,10 @@ func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*
 			last = instance.Status
 			switch instance.Status {
 			case verda.StatusRunning:
-				if instance.IP != nil && *instance.IP != "" {
+				if hasAddress(instance) {
 					return instance, nil
 				}
-			case verda.StatusError, verda.StatusDiscontinued, verda.StatusNotFound, verda.StatusDeleting:
+			case verda.StatusError, verda.StatusDiscontinued, verda.StatusNotFound, verda.StatusDeleting, verda.StatusNoCapacity:
 				return nil, fmt.Errorf("instance entered status %q", instance.Status)
 			}
 		}
@@ -948,9 +1070,16 @@ func waitForRunning(ctx context.Context, instances instanceGetter, id string) (*
 				return nil, fmt.Errorf("not running with an address before the create timeout (last status %q)", last)
 			}
 			return nil, ctx.Err()
-		case <-time.After(instancePollInterval):
+		case <-time.After(interval):
 		}
 	}
+}
+
+func hasAddress(instance *verda.Instance) bool {
+	if instance.IP != nil && *instance.IP != "" {
+		return true
+	}
+	return instance.PrivateIP != nil && *instance.PrivateIP != ""
 }
 
 // preserveKnownIP keeps the address the state already has when the API
@@ -959,4 +1088,15 @@ func preserveKnownIP(prior types.String, instance *verda.Instance, data *Instanc
 	if data.IP.IsNull() && !prior.IsNull() && prior.ValueString() != "" && instance.Status == verda.StatusRunning {
 		data.IP = prior
 	}
+}
+
+// instanceGone reports whether the API object no longer represents a usable
+// instance: Verda keeps evicted spot instances readable with status
+// "discontinued" instead of returning 404.
+func instanceGone(instance *verda.Instance) bool {
+	switch instance.Status {
+	case verda.StatusDiscontinued, verda.StatusDeleting, verda.StatusNotFound:
+		return true
+	}
+	return false
 }

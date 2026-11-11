@@ -71,3 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `verda_container` - Serverless container deployment
   - `verda_serverless_job` - Serverless job deployment
   - `verda_container_registry_credentials` - Registry credentials management
+
+## Unreleased (tokenfactoryspot fork)
+
+- `verda_instance`: new arguments `network`, `subnet`, `private_ip`, `public_ip` and computed `private_ipv4`, `private_network_id`, `subnet_id` for Verda Private Networks (beta). Create waits for a private address when the instance has no public IP, and stops on `no_capacity`. SDK bumped to v1.7.1.

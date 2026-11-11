@@ -473,3 +473,148 @@ func TestPreserveKnownIP(t *testing.T) {
 		t.Fatalf("offline instance: ip = %q, want null", data.IP.ValueString())
 	}
 }
+
+// --- private network fields (tokenfactoryspot patch) ---
+
+func TestSetCreateRequestNetwork_PrivateOnly(t *testing.T) {
+	data := InstanceResourceModel{
+		Network:   types.StringNull(),
+		Subnet:    types.StringValue("subnet-123"),
+		PrivateIP: types.StringValue("10.42.0.21"),
+		PublicIP:  types.StringValue("none"),
+	}
+	var createReq verda.CreateInstanceRequest
+	var diags diag.Diagnostics
+	setCreateRequestNetwork(data, &createReq, &diags)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if createReq.Subnet != "subnet-123" || createReq.Network != "" {
+		t.Errorf("subnet/network = %q/%q, want subnet-123/\"\"", createReq.Subnet, createReq.Network)
+	}
+	if createReq.PrivateIP == nil || string(*createReq.PrivateIP) != "10.42.0.21" {
+		t.Errorf("private_ip = %v, want 10.42.0.21", createReq.PrivateIP)
+	}
+	if createReq.PublicIP == nil || *createReq.PublicIP != verda.IPAllocNone {
+		t.Errorf("public_ip = %v, want none", createReq.PublicIP)
+	}
+}
+
+func TestSetCreateRequestNetwork_OnlyOneAddressIsAnError(t *testing.T) {
+	data := InstanceResourceModel{
+		Network:   types.StringNull(),
+		Subnet:    types.StringNull(),
+		PrivateIP: types.StringValue("auto"),
+		PublicIP:  types.StringNull(),
+	}
+	var createReq verda.CreateInstanceRequest
+	var diags diag.Diagnostics
+	setCreateRequestNetwork(data, &createReq, &diags)
+	if !diags.HasError() {
+		t.Fatal("expected a diagnostic: private_ip without public_ip")
+	}
+	if !strings.Contains(diags.Errors()[0].Detail(), "public_ip") {
+		t.Errorf("diagnostic should name public_ip, got %q", diags.Errors()[0].Detail())
+	}
+}
+
+func TestSetCreateRequestNetwork_OmittedLeavesLegacyNetworking(t *testing.T) {
+	data := InstanceResourceModel{
+		Network: types.StringNull(), Subnet: types.StringNull(),
+		PrivateIP: types.StringNull(), PublicIP: types.StringNull(),
+	}
+	var createReq verda.CreateInstanceRequest
+	var diags diag.Diagnostics
+	setCreateRequestNetwork(data, &createReq, &diags)
+	if diags.HasError() || createReq.PrivateIP != nil || createReq.PublicIP != nil || createReq.Subnet != "" || createReq.Network != "" {
+		t.Errorf("omitted fields must send nothing, got %+v diags=%v", createReq, diags)
+	}
+}
+
+func TestFlatten_PrivateOnly_SetsPrivateIPAndNullIP(t *testing.T) {
+	priv, net, sub := "10.42.0.21", "net-1", "subnet-123"
+	instance := &verda.Instance{
+		ID: "i-1", Status: verda.StatusRunning, Hostname: "gpu-01",
+		IP: nil, PrivateIP: &priv, PrivateNetworkID: &net, SubnetID: &sub,
+	}
+	var data InstanceResourceModel
+	var diags diag.Diagnostics
+	(&InstanceResource{}).flattenInstanceToModel(context.Background(), instance, &data, &diags)
+	if !data.IP.IsNull() {
+		t.Errorf("ip should be null for a private-only instance, got %q", data.IP.ValueString())
+	}
+	if data.PrivateIPv4.ValueString() != priv || data.PrivateNetworkID.ValueString() != net || data.SubnetID.ValueString() != sub {
+		t.Errorf("private fields = %q/%q/%q", data.PrivateIPv4.ValueString(), data.PrivateNetworkID.ValueString(), data.SubnetID.ValueString())
+	}
+}
+
+func TestFlatten_Legacy_PrivateFieldsNull(t *testing.T) {
+	ip := "1.2.3.4"
+	instance := &verda.Instance{ID: "i-1", Status: verda.StatusRunning, IP: &ip}
+	var data InstanceResourceModel
+	var diags diag.Diagnostics
+	(&InstanceResource{}).flattenInstanceToModel(context.Background(), instance, &data, &diags)
+	if !data.PrivateIPv4.IsNull() || !data.PrivateNetworkID.IsNull() || !data.SubnetID.IsNull() {
+		t.Error("private fields must be null for a legacy instance")
+	}
+}
+
+type scriptedGetter struct {
+	states []*verda.Instance
+	calls  int
+}
+
+func (g *scriptedGetter) GetByID(_ context.Context, _ string) (*verda.Instance, error) {
+	i := g.calls
+	if i >= len(g.states) {
+		i = len(g.states) - 1
+	}
+	g.calls++
+	return g.states[i], nil
+}
+
+func TestWaitForRunning_PrivateOnlyCompletesWithoutPublicIP(t *testing.T) {
+	priv := "10.42.0.21"
+	getter := &scriptedGetter{states: []*verda.Instance{
+		{ID: "i-1", Status: verda.StatusProvisioning},
+		{ID: "i-1", Status: verda.StatusRunning, PrivateIP: &priv},
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	instance, err := waitForRunningWithInterval(ctx, getter, "i-1", 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected success for a running private-only instance, got %v", err)
+	}
+	if instance.PrivateIP == nil || *instance.PrivateIP != priv {
+		t.Errorf("private ip not returned")
+	}
+}
+
+func TestWaitForRunning_NoCapacityIsFinal(t *testing.T) {
+	getter := &scriptedGetter{states: []*verda.Instance{{ID: "i-1", Status: verda.StatusNoCapacity}}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := waitForRunningWithInterval(ctx, getter, "i-1", 10*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "no_capacity") {
+		t.Fatalf("expected a final no_capacity error, got %v", err)
+	}
+}
+
+// A spot instance Verda evicted stays readable with status "discontinued";
+// Terraform must treat it as gone so the next apply recreates it
+// (gpu-01, 2026-11-11).
+func TestInstanceGoneOnDiscontinued(t *testing.T) {
+	cases := map[string]bool{
+		verda.StatusRunning:      false,
+		verda.StatusOffline:      false,
+		verda.StatusProvisioning: false,
+		verda.StatusDiscontinued: true,
+		verda.StatusDeleting:     true,
+		verda.StatusNotFound:     true,
+	}
+	for status, want := range cases {
+		if got := instanceGone(&verda.Instance{ID: "i-1", Status: status}); got != want {
+			t.Errorf("instanceGone(%q) = %v, want %v", status, got, want)
+		}
+	}
+}
